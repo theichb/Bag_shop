@@ -250,6 +250,32 @@
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* ---- PIN lock screen ----
+     Sits above everything (fixed, full-viewport, high z-index) until a valid
+     PIN has been entered. The rest of the page still exists underneath and
+     even still makes its normal load-time requests — the backend just
+     refuses to return anything until it sees a token this screen got by
+     checking the PIN, so there's nothing to see even if someone found a way
+     to peek behind it. */
+  .pin-lock {
+    position: fixed; inset: 0; background: var(--ink); z-index: 9999;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .pin-card { max-width: 320px; width: 100%; text-align: center; }
+  .pin-label { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .pin-title {
+    font-family: 'Zilla Slab', Georgia, serif; font-weight: 700; font-size: 26px;
+    margin: 6px 0 2px; color: var(--bone);
+  }
+  .pin-sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  .pin-card input {
+    width: 100%; background: var(--hide); border: 1px solid var(--edge); color: var(--bone);
+    padding: 16px; border-radius: 3px; font-family: 'Space Mono', monospace; font-size: 24px;
+    text-align: center; letter-spacing: .3em; margin-bottom: 10px;
+  }
+  .pin-card input:focus { outline: 1px solid var(--brass); border-color: var(--brass); }
+  .pin-error { color: var(--oxblood); font-size: 12.5px; min-height: 16px; margin-bottom: 12px; }
+
   /* ---- tab bar ---- */
   .tabbar { display: flex; gap: 8px; padding: 16px 0 2px; }
   .tab-btn {
@@ -361,6 +387,17 @@
 </style>
 </head>
 <body class="theme-light">
+
+<div class="pin-lock" id="pin-lock" style="display:none">
+  <div class="pin-card">
+    <div class="pin-label">Leather Goods &middot; Locked</div>
+    <h1 class="pin-title">Enter PIN</h1>
+    <p class="pin-sub">This app is locked to keep your sales data private.</p>
+    <input type="password" id="pin-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="8" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;" />
+    <div class="pin-error" id="pin-error"></div>
+    <button class="btn btn-primary" id="pin-submit" type="button" style="width:100%">Unlock</button>
+  </div>
+</div>
 
 <div class="warn-banner" id="warn-banner"></div>
 <div class="install-banner no-print" id="install-banner">
@@ -555,6 +592,31 @@
      ===================================================================== */
   const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxEE98r2t7OavCeP_yn2bUYb1kFk4KZgbMAHEBkTPssqwHWv1sFPDhXLIiHZyTsjlm7/exec";
 
+  // Anyone who finds this page's source (it's on a public site now) can read
+  // this URL — Apps Script "Anyone" access means anyone with the URL could
+  // call it directly, no login required. This shared key is checked by the
+  // backend on every request (see AppsScript-Code.gs) so a stranger who
+  // doesn't have it gets rejected before touching the Sheet. It's not a full
+  // login system — anyone who loads this exact page can still read it out of
+  // the page source too — but it stops opportunistic bots/scanners that
+  // don't specifically target this app, which is the realistic threat here.
+  const BACKEND_KEY = "2426c7eefba035bc935d84d4152f735254dec9e9";
+
+  // PIN lock: the key above stops random bots, but it's readable straight
+  // out of this page's source by anyone who looks — it can't stop someone
+  // who deliberately digs. This token can't be read out of the source
+  // because it doesn't exist until the backend hands it out, and it only
+  // does that after confirming the PIN typed into the lock screen. Every
+  // request below now also sends this token; the backend refuses anything
+  // (see AppsScript-Code.gs) unless it's valid, so a stolen key alone isn't
+  // enough to reach the Sheet.
+  const PIN_TOKEN_KEY = "bagshop_pin_token";
+  const getToken = () => localStorage.getItem(PIN_TOKEN_KEY) || "";
+  const setToken = (t) => { if (t) localStorage.setItem(PIN_TOKEN_KEY, t); else localStorage.removeItem(PIN_TOKEN_KEY); };
+
+  const withKey = (obj) => Object.assign({ key: BACKEND_KEY, token: getToken() }, obj);
+  const keyedUrl = (qs) => BACKEND_URL + "?key=" + encodeURIComponent(BACKEND_KEY) + "&token=" + encodeURIComponent(getToken()) + (qs ? "&" + qs : "");
+
   const PRODUCTS = ["Bag", "Cross Bag", "Side Bag", "Back Pack", "Laptop Bag", "Box Bag", "Hand Held",
     "Wallet", "Long Wallet", "Crocodile Wallet", "Belt", "Cards", "Coin Pouch", "Money Clip", "Passport"];
 
@@ -631,6 +693,53 @@
     showToast._t = setTimeout(() => t.classList.remove("show"), 1800);
   }
 
+  function showLockScreen(msg) {
+    setToken("");
+    document.getElementById("pin-lock").style.display = "flex";
+    const err = document.getElementById("pin-error");
+    if (err) err.textContent = msg || "";
+    const input = document.getElementById("pin-input");
+    if (input) { input.value = ""; setTimeout(() => input.focus(), 50); }
+  }
+
+  function hideLockScreen() {
+    document.getElementById("pin-lock").style.display = "none";
+  }
+
+  async function tryUnlock() {
+    const input = document.getElementById("pin-input");
+    const errEl = document.getElementById("pin-error");
+    const pin = (input.value || "").trim();
+    if (!pin) { errEl.textContent = "Enter your PIN"; return; }
+
+    const btn = document.getElementById("pin-submit");
+    btn.disabled = true;
+    errEl.textContent = "";
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ key: BACKEND_KEY, action: "unlock", pin }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok && data.token) {
+        setToken(data.token);
+        hideLockScreen();
+        loadRecentEntries();
+        loadHistoryDates();
+      } else if (data && data.error === "locked_out") {
+        errEl.textContent = `Too many wrong tries — try again in about ${data.retryMinutes || 30} min.`;
+      } else {
+        errEl.textContent = "Wrong PIN — try again.";
+        input.value = "";
+        input.focus();
+      }
+    } catch (err) {
+      errEl.textContent = "Couldn't reach the server — check your connection.";
+    }
+    btn.disabled = false;
+  }
+
   function renderBanner() {
     const el = document.getElementById("warn-banner");
     if (BACKEND_URL) {
@@ -694,7 +803,7 @@
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight against Apps Script
-        body: JSON.stringify({ date: isoToDMY(entry.date), item: entry.item, qty: entry.qty, sell: entry.sell, cost: entry.cost }),
+        body: JSON.stringify(withKey({ date: isoToDMY(entry.date), item: entry.item, qty: entry.qty, sell: entry.sell, cost: entry.cost })),
       });
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
@@ -720,7 +829,7 @@
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "delete", id: entry.remoteId }),
+        body: JSON.stringify(withKey({ action: "delete", id: entry.remoteId })),
       });
       const data = await res.json().catch(() => null);
       return !!(data && data.ok);
@@ -732,8 +841,9 @@
   async function loadRecentEntries() {
     if (!BACKEND_URL) return;
     try {
-      const res = await fetch(BACKEND_URL, { method: "GET" });
+      const res = await fetch(keyedUrl(""), { method: "GET" });
       const data = await res.json().catch(() => null);
+      if (data && data.error === "locked") { showLockScreen(); return; }
       if (!data || !data.ok || !Array.isArray(data.entries)) return;
 
       const loaded = data.entries.map((row) => ({
@@ -758,8 +868,9 @@
   async function loadHistoryDates() {
     if (!BACKEND_URL) return;
     try {
-      const res = await fetch(BACKEND_URL + "?action=dates");
+      const res = await fetch(keyedUrl("action=dates"));
       const data = await res.json().catch(() => null);
+      if (data && data.error === "locked") { showLockScreen(); return; }
       if (!data || !data.ok || !Array.isArray(data.dates) || data.dates.length === 0) return;
 
       historyDates = data.dates;
@@ -797,7 +908,7 @@
     document.getElementById("history-list").innerHTML = `<div class="empty-note">Loading&hellip;</div>`;
     document.getElementById("history-total").innerHTML = "";
     try {
-      const res = await fetch(BACKEND_URL + "?date=" + encodeURIComponent(dateStr));
+      const res = await fetch(keyedUrl("date=" + encodeURIComponent(dateStr)));
       const data = await res.json().catch(() => null);
       const rows = (data && data.ok && Array.isArray(data.entries)) ? data.entries : [];
       historyCache[dateStr] = rows;
@@ -987,7 +1098,7 @@
         const res = await fetch(BACKEND_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "editEntry", id: entry.remoteId, date: isoToDMY(dateVal), item, qty, sell, cost }),
+          body: JSON.stringify(withKey({ action: "editEntry", id: entry.remoteId, date: isoToDMY(dateVal), item, qty, sell, cost })),
         });
         const data = await res.json().catch(() => null);
         if (!data || !data.ok) {
@@ -1551,8 +1662,9 @@
   async function fetchSummary() {
     if (!BACKEND_URL) return null;
     try {
-      const res = await fetch(BACKEND_URL + "?action=summary");
+      const res = await fetch(keyedUrl("action=summary"));
       const data = await res.json().catch(() => null);
+      if (data && data.error === "locked") { showLockScreen(); return null; }
       return (data && data.ok) ? data : null;
     } catch (err) {
       return null;
@@ -1879,7 +1991,7 @@
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withKey(payload)),
       });
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
@@ -1939,7 +2051,7 @@
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withKey(payload)),
       });
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
@@ -1970,7 +2082,7 @@
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: type.deleteAction, id: row.id }),
+        body: JSON.stringify(withKey({ action: type.deleteAction, id: row.id })),
       });
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
@@ -2050,6 +2162,10 @@
     slider.value = Math.min(historyDates.length - 1, Number(slider.value) + 1);
     showHistoryDay(Number(slider.value));
   });
+
+  document.getElementById("pin-submit").addEventListener("click", tryUnlock);
+  document.getElementById("pin-input").addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });
+  if (!getToken()) showLockScreen();
 
   renderChips();
   render();
