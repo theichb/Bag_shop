@@ -1,0 +1,2130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<title>Daily Sales Entry</title>
+
+<!-- PWA: installable home-screen app -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#17110E" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Bag Shop" />
+<meta name="mobile-web-app-capable" content="yes" />
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Karla:wght@400;600&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --ink: #17110E;
+    --hide: #221A15;
+    --edge: #33261F;
+    --brass: #C69749;
+    --brassDim: #7A5E2E;
+    --bone: #EDE3D4;
+    --muted: #9C8A78;
+    --oxblood: #B0472F;
+    --verdigris: #82A06B;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--ink); }
+  body {
+    color: var(--bone);
+    font-family: 'Karla', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px;
+  }
+
+  /* ---- Per-tab color themes ----
+     Every existing rule already reads color/background off these CSS
+     variables, so redefining them on a body.theme-* class (toggled by
+     switchTab(), one class per tab, only while that tab is showing) reskins
+     the whole visible page for free — no separate copies of .card/.btn/
+     .entry-row/etc. needed per tab. Class names are historical (theme-light
+     started as a literal light theme, theme-dashgreen a dark green one) and
+     no longer describe their current colors — they're just per-tab hooks
+     now, so renaming them isn't worth the churn each time the colors change.
+     Log Sales = bright blue, Dashboard = electric blue, Costs = cyan. */
+  body.theme-light {
+    /* --ink here is the "boxes" color (inputs, chips read background from
+       --ink, not --hide — see .field input / .item-chip below), not the
+       page color. The page's own background is set as a literal at the
+       bottom of this block instead, so the page can stay cream while boxes
+       stay grey. */
+    --ink: #D3D3D3;
+    --hide: #E2DFD8;
+    --edge: #B0AEA6;
+    --brass: #1B2A4A;
+    --brassDim: #47597A;
+    --bone: #1B2A4A;
+    --muted: #55627A;
+    --oxblood: #96371F;
+    --verdigris: #3F6B30;
+    background: #F5EFDF;
+  }
+
+  body.theme-dashgreen {
+    --ink: #14301F;
+    --hide: #1D4128;
+    --edge: #355A40;
+    --brass: #C69749;
+    --brassDim: #7A5E2E;
+    --bone: #E8E9DA;
+    --muted: #8FA08C;
+    --oxblood: #C2573B;
+    --verdigris: #8FBF7A;
+    background: var(--ink);
+  }
+
+  body.theme-costs {
+    /* White page, a light warm-grey card underneath it (--hide) so the form
+       and list still read as a distinct surface, and inputs/chips (which
+       read background from --ink, same as the page) come out white again —
+       floating cleanly on the grey card. Dark warm charcoal text and a
+       deep amber accent (ties back to the original leather/brass palette)
+       keep it from feeling sterile. */
+    --ink: #FFFFFF;
+    --hide: #F2F1EE;
+    --edge: #DEDAD2;
+    --brass: #9C6B1F;
+    --brassDim: #C9A15C;
+    --bone: #221D16;
+    --muted: #756B5C;
+    --oxblood: #96371F;
+    --verdigris: #3F6B30;
+    background: #FFFFFF;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+  .label {
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+  }
+  .mono { font-family: 'Space Mono', ui-monospace, monospace; }
+  h1 {
+    font-family: 'Zilla Slab', Georgia, serif; font-weight: 700;
+    font-size: 26px; margin: 6px 0 2px; letter-spacing: -0.01em;
+  }
+  .intro { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+
+  .warn-banner {
+    background: var(--hide); border-bottom: 1px solid var(--oxblood);
+    padding: 10px 16px; font-size: 12.5px; color: var(--bone); line-height: 1.5;
+  }
+  .warn-banner strong { color: var(--oxblood); }
+  .warn-banner.ok { border-bottom-color: var(--verdigris); }
+  .warn-banner.ok strong { color: var(--verdigris); }
+
+  .install-banner {
+    display: none;
+    background: var(--hide); border-bottom: 1px solid var(--brass);
+    padding: 10px 16px; font-size: 12.5px; color: var(--bone); line-height: 1.5;
+    align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .install-banner.show { display: flex; }
+  .install-banner strong { color: var(--brass); }
+  .install-banner .btn-row { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .install-banner button {
+    font-family: 'Karla', sans-serif; font-size: 12px; font-weight: 600;
+    border-radius: 6px; padding: 6px 10px; cursor: pointer; border: 1px solid var(--brass);
+    background: transparent; color: var(--brass);
+  }
+  .install-banner button.install-go { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+  .install-banner button.install-dismiss { border-color: var(--edge); color: var(--muted); }
+
+  .top { padding: 18px 0 6px; }
+  .top-header { display: flex; align-items: center; gap: 14px; }
+  .shop-icon {
+    width: 56px; height: 56px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+    border: 2px solid var(--brass); box-shadow: 0 2px 10px rgba(0,0,0,.4);
+  }
+
+  .card { background: var(--hide); border: 1px solid var(--edge); padding: 16px; margin-top: 14px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%; background: var(--ink); border: 1px solid var(--edge); color: var(--bone);
+    padding: 12px 12px; border-radius: 3px; font-family: 'Karla', sans-serif; font-size: 16px;
+  }
+  .field input:focus { outline: 1px solid var(--brass); border-color: var(--brass); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .item-chip {
+    background: var(--ink); border: 1px solid var(--edge); color: var(--bone);
+    padding: 9px 12px; border-radius: 3px; font-size: 13px; cursor: pointer; font-family: 'Karla', sans-serif;
+  }
+  .item-chip:active, .item-chip.on { border-color: var(--brass); color: var(--brass); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: 'Karla', sans-serif; font-size: 14px; font-weight: 600;
+    letter-spacing: 0.04em; padding: 13px 18px; border-radius: 3px; border: 1px solid var(--brass);
+    cursor: pointer; width: 100%;
+  }
+  .btn-primary { background: var(--brass); color: var(--ink); }
+  .btn-secondary { background: none; color: var(--brass); }
+  .btn-ghost { background: none; color: var(--muted); border-color: var(--edge); }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .btn-row.single { grid-template-columns: 1fr; }
+
+  .section-title { display: flex; justify-content: space-between; align-items: baseline; margin: 22px 0 10px; }
+  .section-title h2 { font-family: 'Zilla Slab', serif; font-size: 17px; font-weight: 700; margin: 0; }
+
+  .entry-row {
+    display: grid; grid-template-columns: 20px 1fr auto auto; gap: 10px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--edge); font-size: 13.5px;
+  }
+  .entry-row .no { color: var(--muted); font-size: 11px; }
+  .entry-row .name { display: flex; flex-direction: column; }
+  .entry-row .name .qty { color: var(--muted); font-size: 11px; }
+  .entry-row .name .sync-tag { font-size: 10px; margin-top: 2px; }
+  .entry-row .name .sync-tag.ok { color: var(--verdigris); }
+  .entry-row .name .sync-tag.pending { color: var(--muted); }
+  .entry-row .name .sync-tag.fail { color: var(--oxblood); cursor: pointer; text-decoration: underline; }
+  .entry-row .amt { text-align: right; }
+  .entry-row .amt .sell { font-size: 14px; }
+  .entry-row .amt .cost { color: var(--muted); font-size: 11px; }
+  .entry-row .del {
+    background: none; border: 1px solid var(--edge); color: var(--oxblood);
+    width: 30px; height: 30px; border-radius: 3px; font-size: 16px; cursor: pointer; line-height: 1;
+  }
+  .entry-row .edit {
+    background: none; border: 1px solid var(--edge); color: var(--brass);
+    width: 30px; height: 30px; border-radius: 3px; font-size: 14px; cursor: pointer; line-height: 1;
+  }
+
+  .empty-note { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
+
+  .subtotal {
+    display: flex; justify-content: space-between; padding: 12px 0 4px; margin-top: 4px;
+    border-top: 1px solid var(--edge); font-weight: 600; font-size: 14px;
+  }
+  .sub-figures { display: flex; gap: 16px; margin-bottom: 6px; font-family: 'Space Mono', monospace; font-weight: 400; font-size: 12px; color: var(--muted); }
+
+  .day-group { margin-bottom: 18px; }
+  .day-group .day-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 0; border-bottom: 1px solid var(--brassDim);
+  }
+  .day-group .day-head .date { font-family: 'Zilla Slab', serif; font-weight: 700; font-size: 15px; }
+  .day-group .day-head .fig { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); }
+
+  .grand-total {
+    background: var(--hide); border: 1px solid var(--brassDim); border-left: 4px solid var(--verdigris);
+    padding: 14px 16px; margin-top: 18px;
+  }
+  .grand-total .big { font-family: 'Space Mono', monospace; font-size: 26px; font-weight: 700; margin: 4px 0; }
+  .grand-total .rows { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); line-height: 1.8; }
+  .grand-total .rows span { color: var(--bone); }
+
+  .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .history-date { font-family: 'Zilla Slab', serif; font-weight: 700; font-size: 15px; }
+  .history-nav { display: flex; gap: 6px; }
+  .history-step {
+    background: none; border: 1px solid var(--edge); color: var(--brass);
+    width: 30px; height: 30px; border-radius: 3px; font-size: 16px; cursor: pointer; line-height: 1;
+  }
+  .history-step:disabled { color: var(--muted); opacity: .4; cursor: default; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+    background: var(--edge); border-radius: 2px; margin: 4px 0 16px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--brass); cursor: pointer; border: 2px solid var(--ink);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--brass);
+    cursor: pointer; border: 2px solid var(--ink);
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(10px);
+    background: var(--brass); color: var(--ink); padding: 10px 18px; border-radius: 4px;
+    font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none; transition: all .2s ease;
+    max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---- tab bar ---- */
+  .tabbar { display: flex; gap: 8px; padding: 16px 0 2px; }
+  .tab-btn {
+    flex: 1; background: none; border: 1px solid var(--edge); color: var(--muted);
+    padding: 11px 12px; border-radius: 3px; font-family: 'Karla', sans-serif; font-size: 12.5px;
+    font-weight: 600; letter-spacing: .06em; text-transform: uppercase; cursor: pointer;
+  }
+  .tab-btn.on { border-color: var(--brass); color: var(--brass); background: var(--hide); }
+
+  /* ---- dashboard ---- */
+  #dash-body .card { margin-top: 0; }
+  .dash-stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px; background: var(--edge); margin-top: 14px;
+  }
+  .dash-stats > div { background: var(--hide); padding: 12px 13px; }
+  .dash-stats .v { font-family: 'Space Mono', monospace; font-size: 16px; margin-top: 5px; }
+  .dash-donut-wrap { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-top: 14px; }
+  .dash-donut { position: relative; width: 200px; height: 200px; flex-shrink: 0; margin: 0 auto; }
+  .dash-donut svg path { cursor: pointer; transition: opacity .15s ease; }
+  .dash-donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; pointer-events: none; text-align: center;
+  }
+  .dash-legend { flex: 1; min-width: 170px; display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 2px 10px; }
+  .dash-legend button {
+    display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 4px 0;
+    cursor: pointer; color: var(--bone); font-family: 'Karla', sans-serif; font-size: 12px; width: 100%; text-align: left;
+  }
+  .dash-legend button.on { color: var(--brass); }
+  .dash-legend .dot { width: 8px; height: 8px; border-radius: 1px; flex-shrink: 0; }
+  .dash-legend .pct { color: var(--muted); font-size: 10.5px; margin-left: auto; }
+  .dash-breakeven { margin-top: 14px; color: var(--brassDim); }
+  .dash-day-detail { background: var(--hide); border: 1px solid var(--edge); padding: 13px 15px; margin-top: 14px; }
+  .dash-day-detail .head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+  .dash-day-detail .item-line {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 6px 0;
+    border-bottom: 1px solid var(--ink); font-size: 12.5px;
+  }
+  .dash-sort-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .dash-prod-row {
+    display: grid; grid-template-columns: 1.5fr .6fr .9fr .7fr; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--hide); align-items: center; font-size: 13px;
+  }
+  .dash-prod-row.head { color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; border-bottom: 1px solid var(--edge); }
+  .dash-prod-row .num { font-family: 'Space Mono', monospace; font-size: 12.5px; text-align: right; }
+  .dash-prod-row .bar { height: 2px; margin-top: 4px; background: var(--brass); opacity: .75; margin-left: auto; }
+  .dash-dow-row { display: grid; grid-template-columns: 38px 1fr 68px; gap: 8px; align-items: center; padding: 5px 0; }
+  .dash-dow-row .track { background: var(--hide); height: 14px; }
+  .dash-dow-row .fill { height: 100%; background: var(--brassDim); }
+  .dash-dow-row .fill.max { background: var(--brass); }
+  .dash-restock-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--hide); font-size: 13.5px; }
+  .dash-restock-total { display: flex; justify-content: space-between; padding: 11px 0; font-weight: 600; }
+
+  /* ---- costs tab ---- */
+  .cost-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--edge); font-size: 13.5px; }
+  .cost-row .amt { text-align: right; }
+  .cost-row .del { background: none; border: 1px solid var(--edge); color: var(--oxblood); width: 30px; height: 30px; border-radius: 3px; font-size: 16px; cursor: pointer; line-height: 1; }
+  .cost-row .edit { background: none; border: 1px solid var(--edge); color: var(--brass); width: 30px; height: 30px; border-radius: 3px; font-size: 14px; cursor: pointer; line-height: 1; }
+  .cost-action-choice { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .cost-action-choice button { border-radius: 3px; font-size: 12px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  .cost-choice-edit { background: none; border: 1px solid var(--brassDim); color: var(--brass); }
+  .cost-choice-del { background: none; border: 1px solid var(--oxblood); color: var(--oxblood); }
+  .cost-edit-card { border: 1px solid var(--brassDim); border-radius: 6px; padding: 12px; margin: 8px 0; background: var(--hide); }
+  .cost-edit-card .btn-row { margin-top: 4px; }
+  .cost-date-toggle {
+    display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 46px;
+    text-align: left; background: none; border: none; border-top: 1px solid var(--edge);
+    color: var(--brass); font-size: 16px; font-weight: 700; padding: 12px 0; margin-top: 4px; cursor: pointer; font-family: inherit;
+  }
+  .cost-date-toggle:first-child { border-top: none; margin-top: 0; }
+  .cost-date-toggle:active { opacity: .7; }
+  .cost-date-toggle-meta { color: var(--muted); font-size: 13px; font-weight: 400; }
+
+  /* ---- print ----
+     The whole theme is built on CSS variables (--bone for text, --muted for
+     secondary text, --ink/--hide for backgrounds) tuned for a dark page —
+     on white paper those same variables need very different values, or text
+     like the day legend and product figures prints as pale near-invisible
+     cream-on-white. Redefining the variables here (rather than patching
+     individual selectors) makes every rule that already reads var(--bone)
+     etc., including inline style="color:var(--muted)" ones, repaint
+     correctly for print with no per-element chasing. */
+  @media print {
+    .no-print, #warn-banner { display: none !important; }
+    /* Targets body (not :root) with !important: body.theme-light — used
+       for the Log Sales light theme — sets these same variables directly
+       on the body element itself, and a specified value on an element
+       always wins over one merely inherited from :root no matter how the
+       ancestor rule is marked; only a same-element, higher-priority
+       declaration can override it, which is what this is. */
+    body {
+      --ink: #ffffff !important;
+      --hide: #ffffff !important;
+      --edge: #cccccc !important;
+      --brass: #7a5a1f !important;
+      --brassDim: #9c8355 !important;
+      --bone: #17110E !important;
+      --muted: #5a4d40 !important;
+      --oxblood: #963920 !important;
+      --verdigris: #3f6b30 !important;
+    }
+    html, body { background: #fff; }
+    body { color: var(--bone); padding: 0; }
+    .wrap { max-width: none; padding: 0; }
+    .intro { display: none; }
+    a[href]::after { content: ""; }
+  }
+</style>
+</head>
+<body class="theme-light">
+
+<div class="warn-banner" id="warn-banner"></div>
+<div class="install-banner no-print" id="install-banner">
+  <span id="install-banner-text"><strong>Install this app</strong> — add it to your home screen so it opens instantly, full-screen, like a real app.</span>
+  <div class="btn-row">
+    <button type="button" class="install-go" id="install-go">Install</button>
+    <button type="button" class="install-dismiss" id="install-dismiss">Not now</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="tabbar no-print">
+    <button type="button" class="tab-btn on" id="tab-entry">Log Sales</button>
+    <button type="button" class="tab-btn" id="tab-dashboard">Dashboard</button>
+    <button type="button" class="tab-btn" id="tab-costs">Costs</button>
+  </div>
+
+  <div id="view-entry">
+  <div class="top">
+    <div class="label">Leather Goods &middot; Sales Entry</div>
+    <h1>Log today's sales</h1>
+    <p class="intro">Tap an item, fill in the numbers, add it to the list.</p>
+  </div>
+
+  <div class="card no-print">
+    <div class="field">
+      <label for="date-input">Date</label>
+      <input type="date" id="date-input" />
+    </div>
+
+    <div class="label" style="margin-bottom:8px">Quick pick</div>
+    <div class="chip-row" id="item-chips"></div>
+
+    <div class="field">
+      <label for="item-input">Item</label>
+      <input type="text" id="item-input" placeholder="e.g. Belt" autocomplete="off" />
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="qty-input">Qty</label>
+        <input type="number" id="qty-input" inputmode="numeric" min="1" step="1" value="1" />
+      </div>
+      <div class="field">
+        <label for="sell-input">Sell (total)</label>
+        <input type="number" id="sell-input" inputmode="decimal" min="0" step="1" placeholder="0" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="cost-input">Cost (total, optional)</label>
+      <input type="number" id="cost-input" inputmode="decimal" min="0" step="1" placeholder="0" />
+      <div class="field-hint">Leave blank if you don't know it yet — you can fill it in later.</div>
+    </div>
+
+    <button class="btn btn-primary" id="add-btn" style="width:100%">Add to list</button>
+  </div>
+
+  <div class="section-title">
+    <h2 id="today-heading">Today's entries</h2>
+  </div>
+  <div id="today-list"></div>
+  <div id="today-subtotal"></div>
+
+  <div class="section-title">
+    <h2>All entries (last 24 hours)</h2>
+  </div>
+  <div id="all-entries"></div>
+
+  <div class="grand-total" id="grand-total"></div>
+
+  <div id="history-section" style="display:none">
+    <div class="section-title">
+      <h2>Browse previous days</h2>
+    </div>
+    <div class="card">
+      <div class="history-head">
+        <span class="history-date mono" id="history-date">&mdash;</span>
+        <span class="history-nav no-print">
+          <button type="button" class="history-step" id="history-prev" aria-label="Previous day">&lsaquo;</button>
+          <button type="button" class="history-step" id="history-next" aria-label="Next day">&rsaquo;</button>
+        </span>
+      </div>
+      <input type="range" id="history-slider" class="no-print" min="0" max="0" value="0" step="1" />
+      <div id="history-list"></div>
+      <div id="history-total"></div>
+    </div>
+  </div>
+
+  <div class="btn-row no-print" id="sync-row" style="display:none">
+    <button class="btn btn-secondary" id="sync-all-btn" style="grid-column:1 / -1">Sync all to Google Sheet</button>
+  </div>
+
+  <div class="btn-row no-print">
+    <button class="btn btn-secondary" id="copy-btn">Copy summary</button>
+    <button class="btn btn-primary" id="export-btn">Export to Excel</button>
+  </div>
+  <div class="btn-row no-print">
+    <button class="btn btn-ghost" id="print-entry-btn" type="button">Print sales log</button>
+    <button class="btn btn-ghost" id="clear-btn">Clear all entries</button>
+  </div>
+  </div>
+
+  <div id="view-dashboard" style="display:none">
+    <div class="top">
+      <div class="top-header">
+        <img class="shop-icon" src="data:image/jpeg;base64,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" alt="The shop stall" />
+        <div>
+          <div class="label" id="dash-label">Leather Goods &middot; Dashboard</div>
+          <h1>The books, so far</h1>
+        </div>
+      </div>
+      <p class="intro">Every sale logged, and what it leaves you after stock and the monthly bills.</p>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost no-print" id="dash-refresh-btn" type="button">Refresh</button>
+      <button class="btn btn-ghost no-print" id="print-dashboard-btn" type="button">Print dashboard</button>
+    </div>
+    <div id="dash-body"><div class="empty-note">Loading&hellip;</div></div>
+  </div>
+
+  <div id="view-costs" style="display:none">
+    <div class="top">
+      <div class="label">Leather Goods &middot; Costs</div>
+      <h1>Log a cost</h1>
+      <p class="intro">Restocking, a repair, or a monthly bill &mdash; pick a type and add it.</p>
+    </div>
+
+    <div class="card">
+      <div class="label" style="margin-bottom:8px">Type</div>
+      <div class="chip-row" id="cost-type-chips">
+        <button type="button" class="item-chip" data-type="restocking">Restocking</button>
+        <button type="button" class="item-chip" data-type="repair">Repairs &amp; Usage</button>
+        <button type="button" class="item-chip" data-type="expense">Expense</button>
+      </div>
+
+      <div id="cost-fields-note" class="cost-fields">
+        <div id="restock-quickpick" style="display:none">
+          <div class="label" style="margin-bottom:8px">Quick pick</div>
+          <div class="chip-row" id="restock-item-chips"></div>
+        </div>
+        <div class="field">
+          <label for="cost-date-input">Date</label>
+          <input type="date" id="cost-date-input" />
+        </div>
+        <div class="field" id="cost-qty-field" style="display:none">
+          <label for="cost-qty-input">Quantity (optional)</label>
+          <input type="number" id="cost-qty-input" inputmode="numeric" min="1" step="1" placeholder="e.g. 20" />
+        </div>
+        <div class="field">
+          <label for="cost-note-input">Note (optional)</label>
+          <input type="text" id="cost-note-input" placeholder="e.g. market run" autocomplete="off" />
+        </div>
+      </div>
+
+      <div id="cost-fields-expense" class="cost-fields" style="display:none">
+        <div class="label" style="margin-bottom:8px">Quick pick</div>
+        <div class="chip-row" id="expense-chips"></div>
+        <div class="field">
+          <label for="cost-expense-date-input">Date</label>
+          <input type="date" id="cost-expense-date-input" />
+        </div>
+        <div class="field">
+          <label for="cost-name-input">Name</label>
+          <input type="text" id="cost-name-input" placeholder="e.g. Rent" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="cost-amount-input">Amount</label>
+        <input type="number" id="cost-amount-input" inputmode="decimal" min="0" step="1" placeholder="0" />
+      </div>
+
+      <button class="btn btn-primary" id="cost-add-btn" style="width:100%">Add</button>
+    </div>
+
+    <div class="section-title">
+      <h2 id="cost-list-heading">Restocking entries</h2>
+    </div>
+    <div id="cost-list"></div>
+    <div id="cost-total"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /* =====================================================================
+     EDIT THIS — paste the Web App URL you get after deploying the Google
+     Apps Script backend (see the setup instructions you were given).
+     Leave blank ("") to use this form in local-only mode (export/copy
+     instead of live syncing).
+     ===================================================================== */
+  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxEE98r2t7OavCeP_yn2bUYb1kFk4KZgbMAHEBkTPssqwHWv1sFPDhXLIiHZyTsjlm7/exec";
+
+  const PRODUCTS = ["Bag", "Cross Bag", "Side Bag", "Back Pack", "Laptop Bag", "Box Bag", "Hand Held",
+    "Wallet", "Long Wallet", "Crocodile Wallet", "Belt", "Cards", "Coin Pouch", "Money Clip", "Passport"];
+
+  let entries = []; // { date, item, qty, sell, cost, syncState: 'off'|'pending'|'ok'|'fail' }
+  let historyDates = []; // D/M/YYYY strings, ascending — every day that has at least one logged sale
+  let historyCache = {}; // D/M/YYYY -> entries array, fetched lazily as the user browses
+  let entryActionIdx = null; // idx (into entries) of the today-list row showing the Edit/Delete choice
+  let entryEditIdx = null; // idx (into entries) of the today-list row currently open as an inline edit form
+
+  const baht = (n) => (n < 0 ? "-" : "") + Math.abs(Math.round(n || 0)).toLocaleString("en-US");
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function todayISO() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // The stall stays open past midnight (closes ~4am), so a sale logged at
+  // say 1am should still land on the same date as the rest of that shop
+  // day instead of rolling to tomorrow and forcing a manual date change
+  // every night. This is the "shop day" version of today's date — same as
+  // todayISO() except before 4am it stays on the previous calendar date.
+  // Log Sales only: Costs (restocking/repairs/expenses) always uses the
+  // literal calendar date via todayISO().
+  function businessDayISO() {
+    const d = new Date();
+    if (d.getHours() < 4) d.setDate(d.getDate() - 1);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function isoToDMY(iso) {
+    const [y, m, d] = iso.split("-");
+    return `${Number(d)}/${Number(m)}/${y}`;
+  }
+
+  function dmyToISO(dmy) {
+    const parts = String(dmy).split("/");
+    if (parts.length !== 3) return todayISO();
+    const [d, m, y] = parts.map(Number);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${y}-${pad(m)}-${pad(d)}`;
+  }
+
+  // Some in-app/embedded browsers (chat apps, some webview-based file
+  // previews) silently no-op window.print() instead of throwing — there's
+  // no way to detect that from script, so this always shows a toast first.
+  // If the toast never appears, the click isn't reaching the handler at
+  // all (a rendering/overlap issue); if the toast appears but no dialog
+  // follows, the browser itself doesn't support printing and the page
+  // needs to be opened in the phone's regular browser (Safari/Chrome)
+  // instead of an embedded preview.
+  function printPage() {
+    if (typeof window.print !== "function") {
+      showToast("Printing isn't supported in this view — open the page in Safari/Chrome");
+      return;
+    }
+    showToast("Opening print…");
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        showToast("Couldn't open print — try opening this page in Safari/Chrome");
+      }
+    }, 50);
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => t.classList.remove("show"), 1800);
+  }
+
+  function renderBanner() {
+    const el = document.getElementById("warn-banner");
+    if (BACKEND_URL) {
+      el.className = "warn-banner ok";
+      el.innerHTML = `<strong>Syncing to Google Sheets.</strong> Entries save as you add them. If a row shows "sync failed", tap it to retry, or use "Sync all" below.`;
+    } else {
+      el.className = "warn-banner";
+      el.innerHTML = `<strong>Not saved automatically.</strong> This page keeps entries only while it's open — export or copy your list before closing or refreshing, or you'll lose it.`;
+    }
+  }
+
+  function renderChips() {
+    const wrap = document.getElementById("item-chips");
+    wrap.innerHTML = PRODUCTS.map((p) => `<button type="button" class="item-chip" data-item="${esc(p)}">${esc(p)}</button>`).join("");
+    wrap.querySelectorAll(".item-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.getElementById("item-input").value = chip.dataset.item;
+        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+        chip.classList.add("on");
+        document.getElementById("qty-input").focus();
+        document.getElementById("qty-input").select();
+      });
+    });
+  }
+
+  function currentDate() {
+    return document.getElementById("date-input").value || businessDayISO();
+  }
+
+  function addEntry() {
+    const item = document.getElementById("item-input").value.trim();
+    const qty = parseFloat(document.getElementById("qty-input").value) || 0;
+    const sell = parseFloat(document.getElementById("sell-input").value) || 0;
+    const costRaw = document.getElementById("cost-input").value;
+    const cost = costRaw === "" ? null : parseFloat(costRaw) || 0;
+
+    if (!item) { showToast("Enter an item name"); document.getElementById("item-input").focus(); return; }
+    if (qty <= 0) { showToast("Qty must be at least 1"); document.getElementById("qty-input").focus(); return; }
+    if (sell <= 0) { showToast("Enter the sell amount"); document.getElementById("sell-input").focus(); return; }
+
+    const entry = { date: currentDate(), item, qty, sell, cost, syncState: BACKEND_URL ? "pending" : "off" };
+    entries.push(entry);
+
+    document.getElementById("item-input").value = "";
+    document.getElementById("qty-input").value = "1";
+    document.getElementById("sell-input").value = "";
+    document.getElementById("cost-input").value = "";
+    document.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+    document.getElementById("item-input").focus();
+
+    render();
+    showToast("Added");
+
+    if (BACKEND_URL) syncEntry(entry);
+  }
+
+  async function syncEntry(entry) {
+    entry.syncState = "pending";
+    render();
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight against Apps Script
+        body: JSON.stringify({ date: isoToDMY(entry.date), item: entry.item, qty: entry.qty, sell: entry.sell, cost: entry.cost }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        entry.syncState = "ok";
+        if (data.id) entry.remoteId = data.id;
+        // The history slider may have this day cached (or not know about it
+        // at all yet, if it's this entry's first sale of a brand-new day) —
+        // make sure the next time the user browses to it, it's fresh.
+        const dmy = isoToDMY(entry.date);
+        delete historyCache[dmy];
+        if (BACKEND_URL && !historyDates.includes(dmy)) loadHistoryDates();
+      } else {
+        entry.syncState = "fail";
+      }
+    } catch (err) {
+      entry.syncState = "fail";
+    }
+    render();
+  }
+
+  async function deleteRemote(entry) {
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "delete", id: entry.remoteId }),
+      });
+      const data = await res.json().catch(() => null);
+      return !!(data && data.ok);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function loadRecentEntries() {
+    if (!BACKEND_URL) return;
+    try {
+      const res = await fetch(BACKEND_URL, { method: "GET" });
+      const data = await res.json().catch(() => null);
+      if (!data || !data.ok || !Array.isArray(data.entries)) return;
+
+      const loaded = data.entries.map((row) => ({
+        date: dmyToISO(row.date),
+        item: String(row.item || ""),
+        qty: Number(row.qty) || 0,
+        sell: Number(row.sell) || 0,
+        cost: row.cost === "" || row.cost === null || row.cost === undefined ? null : Number(row.cost),
+        syncState: "ok",
+        remote: true,
+        remoteId: row.loggedAt,
+      }));
+
+      entries = loaded.concat(entries);
+      render();
+      if (loaded.length > 0) showToast(`Loaded ${loaded.length} ${loaded.length === 1 ? "entry" : "entries"} from the last 24 hours`);
+    } catch (err) {
+      showToast("Couldn't load recent entries — check your connection");
+    }
+  }
+
+  async function loadHistoryDates() {
+    if (!BACKEND_URL) return;
+    try {
+      const res = await fetch(BACKEND_URL + "?action=dates");
+      const data = await res.json().catch(() => null);
+      if (!data || !data.ok || !Array.isArray(data.dates) || data.dates.length === 0) return;
+
+      historyDates = data.dates;
+      document.getElementById("history-section").style.display = "";
+
+      const slider = document.getElementById("history-slider");
+      const wasAtEnd = Number(slider.value) >= Number(slider.max); // stay pinned to "most recent" if that's where the user was
+      slider.min = 0;
+      slider.max = historyDates.length - 1;
+      const idx = wasAtEnd ? historyDates.length - 1 : Math.min(Number(slider.value), historyDates.length - 1);
+      slider.value = idx;
+      await showHistoryDay(idx);
+    } catch (err) {
+      // History browsing is a bonus view, not core to logging sales — fail quietly.
+    }
+  }
+
+  function updateHistoryNav() {
+    const idx = Number(document.getElementById("history-slider").value);
+    document.getElementById("history-prev").disabled = idx <= 0;
+    document.getElementById("history-next").disabled = idx >= historyDates.length - 1;
+  }
+
+  async function showHistoryDay(idx) {
+    if (idx < 0 || idx >= historyDates.length) return;
+    const dateStr = historyDates[idx];
+    document.getElementById("history-date").textContent = dateStr;
+    updateHistoryNav();
+
+    if (historyCache[dateStr]) {
+      renderHistoryDay(historyCache[dateStr]);
+      return;
+    }
+
+    document.getElementById("history-list").innerHTML = `<div class="empty-note">Loading&hellip;</div>`;
+    document.getElementById("history-total").innerHTML = "";
+    try {
+      const res = await fetch(BACKEND_URL + "?date=" + encodeURIComponent(dateStr));
+      const data = await res.json().catch(() => null);
+      const rows = (data && data.ok && Array.isArray(data.entries)) ? data.entries : [];
+      historyCache[dateStr] = rows;
+      renderHistoryDay(rows);
+    } catch (err) {
+      document.getElementById("history-list").innerHTML = `<div class="empty-note">Couldn't load this day — check your connection.</div>`;
+    }
+  }
+
+  function renderHistoryDay(rows) {
+    const listEl = document.getElementById("history-list");
+    const totalEl = document.getElementById("history-total");
+    if (rows.length === 0) {
+      listEl.innerHTML = `<div class="empty-note">No sales logged for this date.</div>`;
+      totalEl.innerHTML = "";
+      return;
+    }
+    const normalized = rows.map((row) => ({
+      item: String(row.item || ""),
+      qty: Number(row.qty) || 0,
+      sell: Number(row.sell) || 0,
+      cost: row.cost === "" || row.cost === null || row.cost === undefined ? null : Number(row.cost),
+      syncState: "ok",
+    }));
+    listEl.innerHTML = normalized.map((e, i) => renderEntryRow(e, i + 1, false)).join(""); // read-only — no delete button
+    const t = dayTotals(normalized.map((e) => ({ ...e, cost: e.cost || 0 })));
+    totalEl.innerHTML = `
+      <div class="subtotal">
+        <span>Total</span>
+        <span class="mono">THB ${baht(t.sales)}</span>
+      </div>
+      <div class="sub-figures"><span>${t.units} units</span><span>cost ${baht(t.cost)}</span><span>profit ${baht(t.profit)}</span></div>`;
+  }
+
+  function syncAll() {
+    if (!BACKEND_URL) { showToast("No backend connected yet"); return; }
+    const pending = entries.filter((e) => e.syncState !== "ok");
+    if (pending.length === 0) { showToast("Everything's already synced"); return; }
+    pending.forEach((e) => syncEntry(e));
+    showToast(`Syncing ${pending.length} ${pending.length === 1 ? "entry" : "entries"}…`);
+  }
+
+  async function deleteEntry(idx) {
+    const entry = entries[idx];
+    if (!entry) return;
+
+    if (BACKEND_URL && entry.remoteId) {
+      entry._deleting = true;
+      render();
+      const ok = await deleteRemote(entry);
+      if (!ok) {
+        entry._deleting = false;
+        render();
+        showToast("Couldn't delete from Google Sheet — try again");
+        return;
+      }
+      delete historyCache[isoToDMY(entry.date)];
+    }
+
+    // Look up by reference, not the original idx — other entries may have
+    // been added or removed while the delete request was in flight.
+    const current = entries.indexOf(entry);
+    if (current !== -1) entries.splice(current, 1);
+    render();
+    showToast("Deleted");
+  }
+
+  function groupByDate() {
+    const map = new Map();
+    entries.forEach((e, idx) => {
+      if (!map.has(e.date)) map.set(e.date, []);
+      map.get(e.date).push({ ...e, idx });
+    });
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  function dayTotals(list) {
+    const units = list.reduce((a, e) => a + e.qty, 0);
+    const sales = list.reduce((a, e) => a + e.sell, 0);
+    const cost = list.reduce((a, e) => a + (e.cost || 0), 0);
+    return { units, sales, cost, profit: sales - cost };
+  }
+
+  function syncTag(e) {
+    if (!BACKEND_URL) return "";
+    if (e.syncState === "ok") return `<span class="sync-tag ok">&#10003; saved</span>`;
+    if (e.syncState === "pending") return `<span class="sync-tag pending">syncing&hellip;</span>`;
+    if (e.syncState === "fail") return `<span class="sync-tag fail" data-retry="${e.idx}">sync failed &middot; tap to retry</span>`;
+    return "";
+  }
+
+  function renderEntryRow(e, no, showActions) {
+    if (showActions && entryEditIdx === e.idx) return renderEntryEditRow(e);
+
+    let actionCell = `<span></span>`;
+    if (showActions) {
+      if (e._deleting) {
+        actionCell = `<span class="mono" style="font-size:11px;color:var(--muted)">deleting&hellip;</span>`;
+      } else if (BACKEND_URL && e.syncState === "pending") {
+        actionCell = `<span class="mono" style="font-size:11px;color:var(--muted)">saving&hellip;</span>`;
+      } else if (entryActionIdx === e.idx) {
+        actionCell = `
+          <span class="cost-action-choice">
+            <button type="button" class="cost-choice-edit" data-entry-edit="${e.idx}">Edit</button>
+            <button type="button" class="cost-choice-del" data-entry-del="${e.idx}">Delete</button>
+          </span>`;
+      } else {
+        actionCell = `<button class="edit" data-entry-open="${e.idx}" aria-label="Edit this entry">&#9998;</button>`;
+      }
+    }
+    return `
+      <div class="entry-row">
+        <span class="no mono">${no}</span>
+        <span class="name">
+          <span>${esc(e.item)}</span>
+          <span class="qty mono">&times;${e.qty}</span>
+          ${syncTag(e)}
+        </span>
+        <span class="amt">
+          <div class="sell mono">${baht(e.sell)}</div>
+          ${e.cost !== null ? `<div class="cost mono">cost ${baht(e.cost)}</div>` : ""}
+        </span>
+        ${actionCell}
+      </div>`;
+  }
+
+  // Inline edit form for one today-list sale row — swaps in for that row's
+  // .entry-row when entryEditIdx matches it. e.date is already an ISO
+  // "yyyy-mm-dd" string (that's how entries are stored client-side), so it
+  // drops straight into the <input type="date"> value with no conversion.
+  function renderEntryEditRow(e) {
+    return `
+      <div class="cost-edit-card">
+        <div class="field">
+          <label for="entry-edit-date">Date</label>
+          <input type="date" id="entry-edit-date" value="${esc(e.date)}" />
+        </div>
+        <div class="field">
+          <label for="entry-edit-item">Item</label>
+          <input type="text" id="entry-edit-item" value="${esc(e.item)}" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="entry-edit-qty">Qty</label>
+          <input type="number" id="entry-edit-qty" inputmode="numeric" min="1" step="1" value="${e.qty}" />
+        </div>
+        <div class="field">
+          <label for="entry-edit-sell">Sell</label>
+          <input type="number" id="entry-edit-sell" inputmode="decimal" min="0" step="1" value="${e.sell}" />
+        </div>
+        <div class="field">
+          <label for="entry-edit-cost">Cost (optional)</label>
+          <input type="number" id="entry-edit-cost" inputmode="decimal" min="0" step="1" value="${e.cost !== null ? e.cost : ""}" />
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="entry-edit-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="entry-edit-save" data-entry-save="${e.idx}">Save</button>
+        </div>
+      </div>`;
+  }
+
+  // Saves an edited sale. If the row is already synced (has a remoteId), the
+  // Sheet is updated first and the local copy only changes on success — same
+  // "server confirms, then UI updates" order as the Costs tab's edit. A row
+  // that hasn't synced yet (still pending/offline) has no remoteId to target,
+  // so it's just updated locally; it'll go out with its edited values next
+  // time it syncs.
+  async function saveEntryEdit(idx) {
+    const entry = entries[idx];
+    if (!entry) return;
+
+    const item = document.getElementById("entry-edit-item").value.trim();
+    const qty = parseFloat(document.getElementById("entry-edit-qty").value) || 0;
+    const sell = parseFloat(document.getElementById("entry-edit-sell").value) || 0;
+    const costRaw = document.getElementById("entry-edit-cost").value;
+    const cost = costRaw === "" ? null : (parseFloat(costRaw) || 0);
+    const dateVal = document.getElementById("entry-edit-date").value || businessDayISO();
+
+    if (!item) { showToast("Enter an item name"); document.getElementById("entry-edit-item").focus(); return; }
+    if (qty <= 0) { showToast("Qty must be at least 1"); document.getElementById("entry-edit-qty").focus(); return; }
+    if (sell <= 0) { showToast("Enter the sell amount"); document.getElementById("entry-edit-sell").focus(); return; }
+
+    const saveBtn = document.getElementById("entry-edit-save");
+
+    if (BACKEND_URL && entry.remoteId) {
+      if (saveBtn) saveBtn.disabled = true;
+      try {
+        const res = await fetch(BACKEND_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "editEntry", id: entry.remoteId, date: isoToDMY(dateVal), item, qty, sell, cost }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!data || !data.ok) {
+          showToast("Couldn't save — check your connection");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        delete historyCache[isoToDMY(entry.date)];
+        delete historyCache[isoToDMY(dateVal)];
+      } catch (err) {
+        showToast("Couldn't save — check your connection");
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
+    }
+
+    entry.date = dateVal;
+    entry.item = item;
+    entry.qty = qty;
+    entry.sell = sell;
+    entry.cost = cost;
+    entryEditIdx = null;
+    showToast("Saved");
+    render();
+  }
+
+  function render() {
+    renderBanner();
+    document.getElementById("sync-row").style.display = BACKEND_URL ? "grid" : "none";
+
+    const date = currentDate();
+    const todayEntries = entries.map((e, idx) => ({ ...e, idx })).filter((e) => e.date === date);
+
+    document.getElementById("today-heading").textContent = `${isoToDMY(date)} entries`;
+
+    const todayList = document.getElementById("today-list");
+    if (todayEntries.length === 0) {
+      todayList.innerHTML = `<div class="empty-note">Nothing added for this date yet.</div>`;
+      document.getElementById("today-subtotal").innerHTML = "";
+    } else {
+      todayList.innerHTML = todayEntries.map((e, i) => renderEntryRow(e, i + 1, true)).join("");
+      const t = dayTotals(todayEntries);
+      document.getElementById("today-subtotal").innerHTML = `
+        <div class="subtotal">
+          <span>Subtotal</span>
+          <span class="mono">THB ${baht(t.sales)}</span>
+        </div>
+        <div class="sub-figures"><span>${t.units} units</span><span>cost ${baht(t.cost)}</span><span>profit ${baht(t.profit)}</span></div>`;
+    }
+    todayList.querySelectorAll("[data-entry-open]").forEach((btn) => {
+      btn.addEventListener("click", () => { entryActionIdx = Number(btn.dataset.entryOpen); render(); });
+    });
+    todayList.querySelectorAll("[data-entry-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => { entryEditIdx = Number(btn.dataset.entryEdit); entryActionIdx = null; render(); });
+    });
+    todayList.querySelectorAll("[data-entry-del]").forEach((btn) => {
+      btn.addEventListener("click", () => { entryActionIdx = null; deleteEntry(Number(btn.dataset.entryDel)); });
+    });
+    const entryEditCancel = todayList.querySelector("#entry-edit-cancel");
+    if (entryEditCancel) entryEditCancel.addEventListener("click", () => { entryEditIdx = null; render(); });
+    const entryEditSave = todayList.querySelector("#entry-edit-save");
+    if (entryEditSave) entryEditSave.addEventListener("click", () => saveEntryEdit(Number(entryEditSave.dataset.entrySave)));
+    todayList.querySelectorAll("[data-retry]").forEach((el) => {
+      el.addEventListener("click", () => syncEntry(entries[Number(el.dataset.retry)]));
+    });
+
+    const groups = groupByDate();
+    const allEl = document.getElementById("all-entries");
+    if (groups.length === 0) {
+      allEl.innerHTML = `<div class="empty-note">No entries in the last 24 hours.</div>`;
+    } else {
+      allEl.innerHTML = groups.map(([d, list]) => {
+        const t = dayTotals(list);
+        return `
+          <div class="day-group">
+            <div class="day-head">
+              <span class="date">${isoToDMY(d)}</span>
+              <span class="fig">${list.length} items &middot; THB ${baht(t.sales)}</span>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    const grand = dayTotals(entries);
+    const gt = document.getElementById("grand-total");
+    if (entries.length === 0) {
+      gt.innerHTML = `<div class="label">Session total</div><div class="empty-note" style="padding:6px 0 0">Add an entry to see totals here.</div>`;
+    } else {
+      gt.innerHTML = `
+        <div class="label">Total (last 24 hours) &middot; ${groups.length} day${groups.length === 1 ? "" : "s"}</div>
+        <div class="big mono">THB ${baht(grand.sales)}</div>
+        <div class="rows">
+          <div>Units <span>${grand.units}</span></div>
+          <div>Cost <span>${baht(grand.cost)}</span></div>
+          <div>Profit <span>${baht(grand.profit)}</span></div>
+        </div>`;
+    }
+  }
+
+  function csvEscape(v) {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function buildCSV() {
+    const groups = groupByDate();
+    const lines = [];
+    groups.forEach(([d, list]) => {
+      lines.push(csvEscape(`Date: ${isoToDMY(d)}`));
+      lines.push(["No", "Item", "Qty", "Sell", "Cost"].map(csvEscape).join(","));
+      list.forEach((e, i) => {
+        lines.push([i + 1, e.item, e.qty, e.sell, e.cost === null ? "" : e.cost].map(csvEscape).join(","));
+      });
+      const t = dayTotals(list);
+      lines.push(["", "TOTAL", t.units, t.sales, t.cost].map(csvEscape).join(","));
+      lines.push("");
+    });
+    return lines.join("\r\n");
+  }
+
+  function buildSummaryText() {
+    const groups = groupByDate();
+    const lines = [];
+    groups.forEach(([d, list]) => {
+      lines.push(`Date: ${isoToDMY(d)}`);
+      list.forEach((e, i) => {
+        lines.push(`${i + 1}. ${e.item} x${e.qty} - ${baht(e.sell)}${e.cost !== null ? ` (cost ${baht(e.cost)})` : ""}`);
+      });
+      const t = dayTotals(list);
+      lines.push(`   TOTAL: ${t.units} units, sales ${baht(t.sales)}, cost ${baht(t.cost)}, profit ${baht(t.profit)}`);
+      lines.push("");
+    });
+    return lines.join("\n");
+  }
+
+  function exportCSV() {
+    if (entries.length === 0) { showToast("Nothing to export yet"); return; }
+    const csv = "﻿" + buildCSV(); // BOM so Excel opens UTF-8 correctly
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = currentDate();
+    a.href = url;
+    a.download = `sales-entry-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast("CSV downloaded");
+  }
+
+  async function copySummary() {
+    if (entries.length === 0) { showToast("Nothing to copy yet"); return; }
+    const text = buildSummaryText();
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Copied to clipboard");
+    } catch (err) {
+      showToast("Couldn't copy — try Export instead");
+    }
+  }
+
+  function clearAll() {
+    if (entries.length === 0) return;
+    const msg = BACKEND_URL
+      ? "Clear this list? Entries already saved to your Google Sheet will stay there — this only clears what's shown here."
+      : "Clear every entry in this session? This can't be undone.";
+    if (!confirm(msg)) return;
+    entries = [];
+    render();
+    showToast("Cleared");
+  }
+
+  /* =====================================================================
+     DASHBOARD — pulls everything (?action=summary: full Entries history
+     plus Restocking / Repairs & Usage / Expenses) in one request and
+     renders the leather-ledger overview: net balance, daily share donut,
+     top products, weekday averages, stock bought. Read-only — it never
+     writes anything back, so it's safe to leave open.
+     ===================================================================== */
+
+  const SLICE_COLORS = ["#C69749", "#8C6B3A", "#A8794B", "#6E5330", "#C9A96B",
+    "#7A5E2E", "#B0472F", "#9A6A3C", "#82A06B", "#5F7548",
+    "#D4B071", "#8E6438", "#A9622F", "#B8905A", "#6B5A3E"];
+  const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+
+  let dashModel = null;
+  let dashMonthIndex = 0;    // index into dashModel.months of the month currently on screen
+  let dashOpenDay = null;
+  let dashSortKey = "profit";
+  let dashLoaded = false;
+
+  // Accepts either "D/M/YYYY" (how Entries/Sales Report store dates) or
+  // "YYYY-MM-DD" (how a manually-pasted Restocking/Repairs row might read) —
+  // the backend's normalizeDate_ already converts real Date cells to
+  // "d/M/yyyy", but plain-text ISO strings pass through untouched.
+  function parseFlexDate(s) {
+    s = String(s || "").trim();
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function shortDMY(s) {
+    const d = parseFlexDate(s);
+    return d ? `${d.getDate()}/${d.getMonth() + 1}` : s;
+  }
+
+  // Collapse a list of restocking entries into one row per date, summing
+  // amounts on the same date, ordered earliest to latest.
+  function groupRestockingByDate(list) {
+    const byDate = new Map();
+    list.forEach((r) => {
+      const key = r.date;
+      if (!byDate.has(key)) byDate.set(key, { date: r.date, amount: 0 });
+      byDate.get(key).amount += Number(r.amount) || 0;
+    });
+    return [...byDate.values()].sort((a, b) => {
+      const da = parseFlexDate(a.date);
+      const db = parseFlexDate(b.date);
+      if (da && db) return da - db;
+      return String(a.date).localeCompare(String(b.date));
+    });
+  }
+
+  function monthKeyOf(d) { return `${d.getFullYear()}-${d.getMonth()}`; }
+
+  // Every calendar month from the earliest date seen anywhere in the data
+  // (sales, restocking, or repairs) through TODAY's real month — even months
+  // with zero entries get a slot, so the slider always has a "this month"
+  // stop to land on and the gap between two logged months isn't hidden.
+  function buildMonthsList(dates) {
+    const now = new Date();
+    let min = now;
+    dates.forEach((d) => { if (d && d < min) min = d; });
+    const months = [];
+    let y = min.getFullYear(), m = min.getMonth();
+    const endY = now.getFullYear(), endM = now.getMonth();
+    while (y < endY || (y === endY && m <= endM)) {
+      months.push({ key: `${y}-${m}`, year: y, month: m, label: `${MONTH_NAMES[m]} ${y}` });
+      m++; if (m > 11) { m = 0; y++; }
+    }
+    return months;
+  }
+
+  // Parses raw {entries, restocking, repairs, expenses} into everything the
+  // Dashboard needs, still at full history — computeMonthView() below slices
+  // this down to whichever month the slider is on.
+  function buildDashboardModel(raw) {
+    const dayMap = new Map(); // "D/M/YYYY" -> { date, items: [] }
+    (raw.entries || []).forEach((row) => {
+      const date = String(row.date || "");
+      if (!dayMap.has(date)) dayMap.set(date, { date, items: [] });
+      const q = Number(row.qty) || 0;
+      const s = Number(row.sell) || 0;
+      const costRaw = row.cost === "" || row.cost === null || row.cost === undefined ? 0 : Number(row.cost) || 0;
+      const c = q > 0 ? costRaw / q : 0; // per-unit, matching the reference report's CPU column
+      dayMap.get(date).items.push({ p: String(row.item || ""), q, s, c });
+    });
+
+    const days = [...dayMap.values()]
+      .map((d) => {
+        const parsed = parseFlexDate(d.date);
+        const sales = d.items.reduce((a, r) => a + r.s, 0);
+        const cost = d.items.reduce((a, r) => a + r.c * r.q, 0);
+        const units = d.items.reduce((a, r) => a + r.q, 0);
+        return {
+          ...d,
+          parsed,
+          short: shortDMY(d.date),
+          dow: parsed ? DOW_NAMES[parsed.getDay()] : "",
+          sales, cost, units,
+          profit: sales - cost,
+        };
+      })
+      .sort((a, b) => (a.parsed && b.parsed ? a.parsed - b.parsed : 0));
+
+    const restocking = (raw.restocking || []).map((r) => ({ ...r, parsed: parseFlexDate(r.date) }));
+    const repairs = (raw.repairs || []).map((r) => ({ ...r, parsed: parseFlexDate(r.date) }));
+    // Expenses (Rent, Police, ...) has no date column in the Sheet at all —
+    // it's a flat recurring-bills total, the same regardless of which month
+    // is selected (matching how the Sheet's own Summary tab treats it).
+    const expensesTotal = (raw.expenses || []).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+
+    const allDates = days.map((d) => d.parsed).concat(restocking.map((r) => r.parsed)).concat(repairs.map((r) => r.parsed)).filter(Boolean);
+    const months = buildMonthsList(allDates);
+
+    return { days, restocking, repairs, expensesTotal, months, hasAnyData: days.length > 0 || restocking.length > 0 || repairs.length > 0 };
+  }
+
+  // Slices the full model down to one month and computes that month's
+  // totals/products/weekday breakdown — everything renderDashboard() shows.
+  function computeMonthView(model, monthDesc) {
+    const inMonth = (parsed) => parsed && monthKeyOf(parsed) === monthDesc.key;
+
+    const days = model.days.filter((d) => inMonth(d.parsed)).map((d, i) => ({ ...d, i }));
+    const restocking = model.restocking.filter((r) => inMonth(r.parsed));
+    const repairs = model.repairs.filter((r) => inMonth(r.parsed));
+
+    const sales = days.reduce((a, d) => a + d.sales, 0);
+    const profit = days.reduce((a, d) => a + d.profit, 0);
+    const units = days.reduce((a, d) => a + d.units, 0);
+    const restock = restocking.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const repairsTotal = repairs.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const expenses = model.expensesTotal;
+    const totals = {
+      sales, profit, units, restock, repairs: repairsTotal, expenses,
+      net: sales - restock - repairsTotal - expenses,
+      margin: sales > 0 ? (profit / sales) * 100 : 0,
+      avgDay: days.length > 0 ? sales / days.length : 0,
+    };
+
+    const prodMap = new Map();
+    days.forEach((d) => d.items.forEach((r) => {
+      const e = prodMap.get(r.p) || { name: r.p, units: 0, sales: 0, profit: 0 };
+      e.units += r.q;
+      e.sales += r.s;
+      e.profit += r.s - r.c * r.q;
+      prodMap.set(r.p, e);
+    }));
+    const products = [...prodMap.values()].map((e) => ({
+      ...e,
+      margin: e.sales > 0 ? (e.profit / e.sales) * 100 : 0,
+      perUnit: e.units > 0 ? e.profit / e.units : 0,
+      share: profit !== 0 ? (e.profit / profit) * 100 : 0,
+    }));
+
+    const dowMap = new Map();
+    days.forEach((d) => {
+      if (!d.dow) return;
+      const e = dowMap.get(d.dow) || { dow: d.dow, sales: 0, n: 0 };
+      e.sales += d.sales;
+      e.n += 1;
+      dowMap.set(d.dow, e);
+    });
+    const byDow = DOW_NAMES.filter((x) => dowMap.has(x)).map((x) => {
+      const e = dowMap.get(x);
+      return { dow: x, avg: e.sales / e.n, n: e.n };
+    });
+
+    return { days, totals, products, byDow, restocking };
+  }
+
+  function dashArcs(days) {
+    const total = days.reduce((a, d) => a + d.sales, 0) || 1;
+    let acc = 0;
+    return days.map((d) => {
+      const a0 = acc * 2 * Math.PI - Math.PI / 2;
+      acc += d.sales / total;
+      const a1 = acc * 2 * Math.PI - Math.PI / 2;
+      const R = 86, r = 52;
+      const large = a1 - a0 > Math.PI ? 1 : 0;
+      const p = (rad, ang) => [(100 + rad * Math.cos(ang)).toFixed(2), (100 + rad * Math.sin(ang)).toFixed(2)];
+      const [x0, y0] = p(R, a0), [x1, y1] = p(R, a1), [xi1, yi1] = p(r, a1), [xi0, yi0] = p(r, a0);
+      return { i: d.i, d: `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} L ${xi1} ${yi1} A ${r} ${r} 0 ${large} 0 ${xi0} ${yi0} Z` };
+    });
+  }
+
+  function renderDashboard() {
+    const body = document.getElementById("dash-body");
+    if (!dashModel) return;
+
+    if (!dashModel.hasAnyData) {
+      document.getElementById("dash-label").textContent = "Leather Goods · Dashboard";
+      body.innerHTML = `<div class="empty-note">No sales logged yet — add one from the Log Sales tab and it'll show up here.</div>`;
+      return;
+    }
+
+    // Clamp in case data shrank (or this is the very first render) — always
+    // lands on a real month, defaulting to the most recent (current) one.
+    if (dashMonthIndex < 0) dashMonthIndex = 0;
+    if (dashMonthIndex > dashModel.months.length - 1) dashMonthIndex = dashModel.months.length - 1;
+    const monthDesc = dashModel.months[dashMonthIndex];
+    const view = computeMonthView(dashModel, monthDesc);
+    const { days, totals, products, byDow, restocking } = view;
+
+    document.getElementById("dash-label").textContent = `Leather Goods · ${monthDesc.label}`;
+
+    let switcherHtml = `
+      <div class="history-head" style="margin-top:2px">
+        <span class="history-date mono" id="dash-month-label">${esc(monthDesc.label)}</span>
+        <span class="history-nav no-print">
+          <button type="button" class="history-step" id="dash-month-prev" aria-label="Previous month" ${dashMonthIndex <= 0 ? "disabled" : ""}>&lsaquo;</button>
+          <button type="button" class="history-step" id="dash-month-next" aria-label="Next month" ${dashMonthIndex >= dashModel.months.length - 1 ? "disabled" : ""}>&rsaquo;</button>
+        </span>
+      </div>
+      <input type="range" id="dash-month-slider" class="no-print" min="0" max="${dashModel.months.length - 1}" value="${dashMonthIndex}" step="1" />
+    `;
+
+    if (days.length === 0) {
+      const restockNote = restocking.length > 0
+        ? `<div class="card" style="margin-top:10px">
+            <div class="section-title" style="margin:0 0 8px"><h2>Stock bought</h2></div>
+            ${groupRestockingByDate(restocking).map((r) => `
+              <div class="dash-restock-row">
+                <span>${esc(shortDMY(r.date))}</span>
+                <span class="num" style="color:var(--oxblood)">${baht(r.amount)}</span>
+              </div>`).join("")}
+            <div class="dash-restock-total"><span>Total into stock</span><span class="mono" style="font-size:14px">${baht(totals.restock)}</span></div>
+          </div>`
+        : "";
+      body.innerHTML = `${switcherHtml}<div class="empty-note" style="margin-top:10px">No sales logged in ${esc(monthDesc.label)}.</div>${restockNote}`;
+      wireMonthSwitcher();
+      return;
+    }
+
+    const netPositive = totals.net >= 0;
+
+    const sel = dashOpenDay === null ? null : days.find((d) => d.i === dashOpenDay);
+    const arcs = dashArcs(days);
+    const maxDow = Math.max(...byDow.map((d) => d.avg), 1);
+    const sorted = [...products].sort((a, b) => b[dashSortKey] - a[dashSortKey]);
+    const maxProfit = sorted.length ? sorted[0].profit || 1 : 1;
+
+    let html = switcherHtml;
+
+    html += `
+      <div class="grand-total" style="border-color:${netPositive ? "var(--brassDim)" : "var(--oxblood)"};border-left-color:${netPositive ? "var(--verdigris)" : "var(--oxblood)"}">
+        <div class="label">Net balance</div>
+        <div class="big mono" style="color:${netPositive ? "var(--verdigris)" : "var(--oxblood)"}">THB ${baht(totals.net)}</div>
+        <div class="rows">
+          <div>Sales <span>${baht(totals.sales)}</span></div>
+          <div>&minus; Restocking <span>${baht(totals.restock)}</span></div>
+          <div>&minus; Repairs &amp; supplies <span>${baht(totals.repairs)}</span></div>
+          <div>&minus; Monthly bills <span>${baht(totals.expenses)}</span></div>
+        </div>
+      </div>
+
+      <div class="dash-stats">
+        <div><div class="label">Gross profit</div><div class="v mono">THB ${baht(totals.profit)}</div></div>
+        <div><div class="label">Margin</div><div class="v mono">${totals.margin.toFixed(0)}%</div></div>
+        <div><div class="label">Units sold</div><div class="v mono">${totals.units}</div></div>
+        <div><div class="label">Avg per day</div><div class="v mono">THB ${baht(totals.avgDay)}</div></div>
+      </div>
+
+      <div class="section-title"><h2>Each day's share of sales</h2></div>
+      <div class="dash-donut-wrap">
+        <div class="dash-donut">
+          <svg viewBox="0 0 200 200" width="100%" height="100%" role="img" aria-label="Sales by day">
+            ${arcs.map((a) => `<path data-day="${a.i}" d="${a.d}" fill="${SLICE_COLORS[a.i % SLICE_COLORS.length]}" stroke="var(--ink)" stroke-width="1.5" opacity="${dashOpenDay === null || dashOpenDay === a.i ? 1 : 0.35}" />`).join("")}
+          </svg>
+          <div class="dash-donut-center">
+            <div class="label" style="font-size:9px">${sel ? sel.short : "Total sales"}</div>
+            <div class="mono" style="font-size:18px;font-weight:700">${baht(sel ? sel.sales : totals.sales)}</div>
+            <div class="mono" style="font-size:10.5px;color:var(--muted)">${sel ? ((sel.sales / totals.sales) * 100).toFixed(1) + "% of total" : days.length + " days"}</div>
+          </div>
+        </div>
+        <div class="dash-legend">
+          ${days.map((d) => `
+            <button type="button" data-day="${d.i}" class="${dashOpenDay === d.i ? "on" : ""}">
+              <span class="dot" style="background:${SLICE_COLORS[d.i % SLICE_COLORS.length]}"></span>
+              <span class="mono">${esc(d.short)}</span>
+              <span class="pct">${totals.sales > 0 ? ((d.sales / totals.sales) * 100).toFixed(0) : 0}%</span>
+            </button>`).join("")}
+        </div>
+      </div>
+
+      ${sel ? `
+        <div class="dash-day-detail">
+          <div class="head">
+            <div style="font-family:'Zilla Slab',serif;font-weight:700;font-size:16px">${esc(sel.date)} <span style="color:var(--muted);font-size:12px;font-weight:500">${sel.dow}</span></div>
+            <div class="mono" style="font-size:12px;color:var(--muted)">${sel.units} units &middot; sales ${baht(sel.sales)} &middot; profit ${baht(sel.profit)}</div>
+          </div>
+          <div style="margin-top:8px">
+            ${sel.items.map((r) => `
+              <div class="item-line">
+                <span>${esc(r.p)}${r.q > 1 ? `<span style="color:var(--muted)"> &times;${r.q}</span>` : ""}</span>
+                <span class="mono" style="color:var(--muted);font-size:11.5px">cost ${baht(r.c * r.q)}</span>
+                <span class="mono" style="min-width:50px;text-align:right">${baht(r.s)}</span>
+              </div>`).join("")}
+          </div>
+        </div>` : ""}
+
+      <div class="section-title"><h2>What earns <span style="text-transform:none;letter-spacing:0;font-weight:400">&middot; sorted by ${[["profit","profit"],["units","units"],["perUnit","per unit"],["margin","margin"]].find(([k])=>k===dashSortKey)[1]}</span></h2></div>
+      <div class="dash-sort-row no-print">
+        ${[["profit", "Profit"], ["units", "Units"], ["perUnit", "Per unit"], ["margin", "Margin"]].map(([k, l]) =>
+          `<button type="button" class="item-chip ${dashSortKey === k ? "on" : ""}" data-sort="${k}">${l}</button>`).join("")}
+      </div>
+      <div class="dash-prod-row head">
+        <span>Item</span><span style="text-align:right">Units</span><span style="text-align:right">Profit</span><span style="text-align:right">Each</span>
+      </div>
+      ${sorted.map((p) => `
+        <div class="dash-prod-row">
+          <span>${esc(p.name)}</span>
+          <span class="num" style="color:var(--muted)">${p.units}</span>
+          <span class="num">${baht(p.profit)}<div class="bar" style="width:${maxProfit ? Math.max(0, (p.profit / maxProfit) * 100) : 0}%"></div></span>
+          <span class="num" style="color:var(--brass)">${baht(p.perUnit)}</span>
+        </div>`).join("")}
+
+      ${byDow.length > 0 ? `
+        <div class="section-title"><h2>Average takings by weekday</h2></div>
+        ${byDow.map((d) => `
+          <div class="dash-dow-row">
+            <span class="mono" style="font-size:12px;color:var(--muted)">${d.dow}</span>
+            <div class="track"><div class="fill ${d.avg === maxDow ? "max" : ""}" style="width:${(d.avg / maxDow) * 100}%"></div></div>
+            <span class="num">${baht(d.avg)}</span>
+          </div>`).join("")}` : ""}
+
+      ${restocking.length > 0 ? `
+        <div class="section-title"><h2>Stock bought</h2></div>
+        <div class="card">
+          ${groupRestockingByDate(restocking).map((r) => `
+            <div class="dash-restock-row">
+              <span>${esc(shortDMY(r.date))}</span>
+              <span class="num" style="color:var(--oxblood)">${baht(r.amount)}</span>
+            </div>`).join("")}
+          <div class="dash-restock-total"><span>Total into stock</span><span class="mono" style="font-size:14px">${baht(totals.restock)}</span></div>
+        </div>` : ""}
+    `;
+
+    body.innerHTML = html;
+
+    body.querySelectorAll("[data-day]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const i = Number(el.dataset.day);
+        dashOpenDay = dashOpenDay === i ? null : i;
+        renderDashboard();
+      });
+    });
+    body.querySelectorAll("[data-sort]").forEach((el) => {
+      el.addEventListener("click", () => {
+        dashSortKey = el.dataset.sort;
+        renderDashboard();
+      });
+    });
+    wireMonthSwitcher();
+  }
+
+  // Moving to a different month makes the old day-detail selection
+  // (dashOpenDay is a within-month index) meaningless, so it's reset here.
+  function goToMonth(idx) {
+    const clamped = Math.max(0, Math.min(dashModel.months.length - 1, idx));
+    if (clamped === dashMonthIndex) return;
+    dashMonthIndex = clamped;
+    dashOpenDay = null;
+    renderDashboard();
+  }
+
+  function wireMonthSwitcher() {
+    const slider = document.getElementById("dash-month-slider");
+    const prev = document.getElementById("dash-month-prev");
+    const next = document.getElementById("dash-month-next");
+    if (!slider) return;
+    slider.addEventListener("input", () => {
+      document.getElementById("dash-month-label").textContent = dashModel.months[Number(slider.value)].label;
+    });
+    slider.addEventListener("change", () => goToMonth(Number(slider.value)));
+    prev.addEventListener("click", () => goToMonth(dashMonthIndex - 1));
+    next.addEventListener("click", () => goToMonth(dashMonthIndex + 1));
+  }
+
+  // Shared by the Dashboard and Costs tabs — both just want the full
+  // {entries, restocking, repairs, expenses} snapshot; each keeps its own
+  // cache and re-fetches independently so neither has to know about the other.
+  async function fetchSummary() {
+    if (!BACKEND_URL) return null;
+    try {
+      const res = await fetch(BACKEND_URL + "?action=summary");
+      const data = await res.json().catch(() => null);
+      return (data && data.ok) ? data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async function loadDashboard(force) {
+    if (dashLoaded && !force) { renderDashboard(); return; }
+    const body = document.getElementById("dash-body");
+    if (!BACKEND_URL) {
+      body.innerHTML = `<div class="empty-note">Connect a Google Sheet backend (set BACKEND_URL) to see the dashboard.</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="empty-note">Loading&hellip;</div>`;
+    const data = await fetchSummary();
+    if (!data) {
+      body.innerHTML = `<div class="empty-note">Couldn't load the dashboard &mdash; check your connection and try Refresh.</div>`;
+      return;
+    }
+    dashModel = buildDashboardModel(data);
+    dashMonthIndex = dashModel.months.length - 1; // always land on the current month
+    dashOpenDay = null;
+    dashLoaded = true;
+    renderDashboard();
+  }
+
+  /* =====================================================================
+     COSTS — add/browse/delete Restocking, Repairs & Usage, and Expenses
+     rows straight from the phone, instead of opening the Sheet to type
+     them in by hand. Feeds the same tabs the Summary formulas already read,
+     so Net Balance updates itself — nothing here needs a "rebuild" step.
+     ===================================================================== */
+
+  const COST_TYPES = {
+    restocking: { listKey: "restocking", addAction: "addRestocking", deleteAction: "deleteRestocking", editAction: "editRestocking", heading: "Restocking entries" },
+    repair: { listKey: "repairs", addAction: "addRepair", deleteAction: "deleteRepair", editAction: "editRepair", heading: "Repairs & Usage entries" },
+    expense: { listKey: "expenses", addAction: "addExpense", deleteAction: "deleteExpense", editAction: "editExpense", heading: "Expenses" },
+  };
+  const EXPENSE_NAMES = ["Rent", "Police", "Stock", "Light", "Labor"];
+
+  let costType = "restocking";
+  let costsRaw = null; // last-fetched {entries, restocking, repairs, expenses} or null
+  let costActionIdx = null; // idx of the row currently showing the Edit/Delete choice
+  let costEditIdx = null; // idx of the row currently open as an inline edit form
+  // Restocking only: per-date expand/collapse overrides. A date not present
+  // here uses its default (most recent date open, every other date closed);
+  // toggling a date records an explicit override here instead.
+  let costDateOverrides = new Map(); // dateStr -> true/false
+
+  function renderExpenseChips() {
+    const wrap = document.getElementById("expense-chips");
+    wrap.innerHTML = EXPENSE_NAMES.map((n) => `<button type="button" class="item-chip" data-expense="${esc(n)}">${esc(n)}</button>`).join("");
+    wrap.querySelectorAll(".item-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.getElementById("cost-name-input").value = chip.dataset.expense;
+        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+        chip.classList.add("on");
+        document.getElementById("cost-amount-input").focus();
+      });
+    });
+  }
+
+  // Same PRODUCTS list and same tap-to-fill interaction as the Log Sales
+  // tab's item chips — tapping one just fills the Note field with that name.
+  function renderRestockChips() {
+    const wrap = document.getElementById("restock-item-chips");
+    wrap.innerHTML = PRODUCTS.map((p) => `<button type="button" class="item-chip" data-restock-item="${esc(p)}">${esc(p)}</button>`).join("");
+    wrap.querySelectorAll(".item-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.getElementById("cost-note-input").value = chip.dataset.restockItem;
+        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+        chip.classList.add("on");
+        const qtyField = document.getElementById("cost-qty-field");
+        (qtyField.style.display !== "none" ? document.getElementById("cost-qty-input") : document.getElementById("cost-amount-input")).focus();
+      });
+    });
+  }
+
+  function renderCostFields() {
+    document.querySelectorAll("#cost-type-chips .item-chip").forEach((c) => c.classList.toggle("on", c.dataset.type === costType));
+    document.getElementById("cost-fields-note").style.display = costType === "expense" ? "none" : "";
+    document.getElementById("cost-fields-expense").style.display = costType === "expense" ? "" : "none";
+    document.getElementById("cost-qty-field").style.display = costType === "restocking" ? "" : "none";
+    document.getElementById("restock-quickpick").style.display = costType === "restocking" ? "" : "none";
+    renderCostList();
+  }
+
+  function renderCostList() {
+    const type = COST_TYPES[costType];
+    document.getElementById("cost-list-heading").textContent = type.heading;
+    const listEl = document.getElementById("cost-list");
+    const totalEl = document.getElementById("cost-total");
+
+    if (!BACKEND_URL) {
+      listEl.innerHTML = `<div class="empty-note">Connect a Google Sheet backend to track costs.</div>`;
+      totalEl.innerHTML = "";
+      return;
+    }
+    if (!costsRaw) {
+      listEl.innerHTML = `<div class="empty-note">Loading&hellip;</div>`;
+      totalEl.innerHTML = "";
+      return;
+    }
+
+    const rows = costsRaw[type.listKey] || [];
+    if (rows.length === 0) {
+      listEl.innerHTML = `<div class="empty-note">Nothing logged here yet.</div>`;
+      totalEl.innerHTML = "";
+      return;
+    }
+
+    const ordered = rows.map((r, idx) => ({ ...r, idx })).reverse(); // newest first
+
+    listEl.innerHTML = costType === "restocking"
+      ? renderRestockingList(ordered, type)
+      : ordered.map((r) => renderCostRow(r, type)).join("");
+
+    wireCostListEvents(listEl);
+
+    const total = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    totalEl.innerHTML = `<div class="subtotal"><span>Total</span><span class="mono">THB ${baht(total)}</span></div>`;
+  }
+
+  // Renders one entry as either its normal .cost-row (with Edit/Delete
+  // controls per COST_TYPES) or, if it's the row currently being edited, the
+  // inline edit form. Shared by the plain flat list (repairs/expenses) and
+  // the restocking per-date dropdowns below. opts.hideDate drops the date
+  // from the row label — used inside a restocking dropdown, where the date
+  // is already the header, so repeating it on every row is redundant.
+  function renderCostRow(r, type, opts) {
+    opts = opts || {};
+    if (type.editAction && costEditIdx === r.idx) return renderCostEditRow(r);
+
+    const itemLabel = r.note ? esc(r.note) : `<span style="color:var(--muted)">No note</span>`;
+    const qtySuffix = (costType === "restocking" && r.qty) ? ` &middot; &times;${r.qty}` : "";
+
+    const label = costType === "expense"
+      ? `${r.date ? `${esc(shortDMY(r.date))} &middot; ` : ""}${esc(r.name)}`
+      : opts.hideDate
+        ? `${itemLabel}${qtySuffix}`
+        : `${esc(shortDMY(r.date))}${r.note ? ` &middot; ${esc(r.note)}` : ""}${qtySuffix}`;
+
+    let actionCell;
+    if (!r.id) {
+      actionCell = `<span title="Added before this tab existed — delete it in the Sheet directly"></span>`;
+    } else if (type.editAction && costActionIdx === r.idx) {
+      actionCell = `
+        <span class="cost-action-choice">
+          <button type="button" class="cost-choice-edit" data-cost-edit="${r.idx}">Edit</button>
+          <button type="button" class="cost-choice-del" data-cost-del="${r.idx}">Delete</button>
+        </span>`;
+    } else if (type.editAction) {
+      actionCell = `<button class="edit" data-cost-open="${r.idx}" aria-label="Edit this entry">&#9998;</button>`;
+    } else {
+      actionCell = `<button class="del" data-cost-idx="${r.idx}">&times;</button>`;
+    }
+
+    return `
+      <div class="cost-row">
+        <span>${label}</span>
+        <span class="amt mono">${baht(r.amount)}</span>
+        ${actionCell}
+      </div>`;
+  }
+
+  // Restocking only: every distinct date gets its own collapsible dropdown,
+  // most recent date first. The most recent date defaults open ("the latest
+  // entry stays expanded") and every other date defaults closed, but either
+  // can be flipped via costDateOverrides — so a busy restocking day (a dozen
+  // items bought in one market run) is easy to scan, older days stay out of
+  // the way until wanted, and any single date can be opened or closed on its
+  // own. Sorted by real calendar date (via dmyToISO), not insertion order,
+  // so a backfilled old-dated entry doesn't land at the top just because it
+  // was the most recently added row.
+  function renderRestockingList(ordered, type) {
+    const groups = groupRowsByDateDesc(ordered);
+
+    return groups.map(([dateStr, rows], i) => {
+      const isDefaultOpen = i === 0;
+      const isOpen = costDateOverrides.has(dateStr) ? costDateOverrides.get(dateStr) : isDefaultOpen;
+      const groupTotal = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+
+      const header = `
+        <button type="button" class="cost-date-toggle" data-cost-date-toggle="${esc(dateStr)}" data-cost-date-default="${isDefaultOpen ? "1" : "0"}">
+          <span>${isOpen ? "&#9662;" : "&#9656;"} ${esc(shortDMY(dateStr))}</span>
+          <span class="cost-date-toggle-meta">${rows.length} &middot; THB ${baht(groupTotal)}</span>
+        </button>`;
+
+      return header + (isOpen ? rows.map((r) => renderCostRow(r, type, { hideDate: true })).join("") : "");
+    }).join("");
+  }
+
+  // Groups already-idx-tagged rows by their raw date string, then orders the
+  // groups by real calendar date, most recent first (dmyToISO sorts
+  // correctly as a zero-padded string). Rows within a group keep whatever
+  // relative order they arrived in.
+  function groupRowsByDateDesc(rows) {
+    const byDate = new Map();
+    rows.forEach((r) => {
+      if (!byDate.has(r.date)) byDate.set(r.date, []);
+      byDate.get(r.date).push(r);
+    });
+    return [...byDate.entries()].sort((a, b) => dmyToISO(b[0]).localeCompare(dmyToISO(a[0])));
+  }
+
+  // Event wiring shared by the flat list and the restocking latest/older
+  // split — both just render .cost-row / .cost-edit-card markup into
+  // #cost-list, so one pass over listEl catches everything regardless of
+  // which render path built it.
+  function wireCostListEvents(listEl) {
+    listEl.querySelectorAll("[data-cost-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => deleteCost(Number(btn.dataset.costIdx)));
+    });
+    listEl.querySelectorAll("[data-cost-open]").forEach((btn) => {
+      btn.addEventListener("click", () => { costActionIdx = Number(btn.dataset.costOpen); renderCostList(); });
+    });
+    listEl.querySelectorAll("[data-cost-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => { costEditIdx = Number(btn.dataset.costEdit); costActionIdx = null; renderCostList(); });
+    });
+    listEl.querySelectorAll("[data-cost-del]").forEach((btn) => {
+      btn.addEventListener("click", () => { costActionIdx = null; deleteCost(Number(btn.dataset.costDel)); });
+    });
+    const cancelBtn = listEl.querySelector("#cost-edit-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", () => { costEditIdx = null; renderCostList(); });
+    const saveBtn = listEl.querySelector("#cost-edit-save");
+    if (saveBtn) saveBtn.addEventListener("click", () => saveCostEdit(Number(saveBtn.dataset.costSave)));
+    listEl.querySelectorAll("[data-cost-date-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const d = btn.dataset.costDateToggle;
+        const isDefaultOpen = btn.dataset.costDateDefault === "1";
+        const current = costDateOverrides.has(d) ? costDateOverrides.get(d) : isDefaultOpen;
+        costDateOverrides.set(d, !current);
+        renderCostList();
+      });
+    });
+  }
+
+  // Inline edit form for one row — swaps in for that row's .cost-row when
+  // costEditIdx matches it. Field set depends on costType: expense gets
+  // Date/Name/Amount, restocking gets Date/Qty/Note/Amount, repair gets
+  // Date/Note/Amount.
+  function renderCostEditRow(r) {
+    if (costType === "expense") {
+      return `
+        <div class="cost-edit-card">
+          <div class="field">
+            <label for="cost-edit-date">Date</label>
+            <input type="date" id="cost-edit-date" value="${esc(r.date ? dmyToISO(r.date) : todayISO())}" />
+          </div>
+          <div class="field">
+            <label for="cost-edit-name">Name</label>
+            <input type="text" id="cost-edit-name" value="${esc(r.name || "")}" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="cost-edit-amount">Amount</label>
+            <input type="number" id="cost-edit-amount" inputmode="decimal" min="0" step="1" value="${r.amount}" />
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-ghost" id="cost-edit-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="cost-edit-save" data-cost-save="${r.idx}">Save</button>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="cost-edit-card">
+        <div class="field">
+          <label for="cost-edit-date">Date</label>
+          <input type="date" id="cost-edit-date" value="${esc(dmyToISO(r.date))}" />
+        </div>
+        ${costType === "restocking" ? `
+        <div class="field">
+          <label for="cost-edit-qty">Quantity (optional)</label>
+          <input type="number" id="cost-edit-qty" inputmode="numeric" min="1" step="1" value="${r.qty != null ? r.qty : ""}" />
+        </div>` : ""}
+        <div class="field">
+          <label for="cost-edit-note">Note (optional)</label>
+          <input type="text" id="cost-edit-note" value="${esc(r.note || "")}" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="cost-edit-amount">Amount</label>
+          <input type="number" id="cost-edit-amount" inputmode="decimal" min="0" step="1" value="${r.amount}" />
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="cost-edit-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="cost-edit-save" data-cost-save="${r.idx}">Save</button>
+        </div>
+      </div>`;
+  }
+
+  async function saveCostEdit(idx) {
+    const type = COST_TYPES[costType];
+    const rows = costsRaw[type.listKey] || [];
+    const row = rows[idx];
+    if (!row || !row.id || !type.editAction) return;
+
+    const amount = parseFloat(document.getElementById("cost-edit-amount").value) || 0;
+    if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-edit-amount").focus(); return; }
+    const dateVal = document.getElementById("cost-edit-date").value || todayISO();
+
+    let payload;
+    if (costType === "expense") {
+      const name = document.getElementById("cost-edit-name").value.trim();
+      if (!name) { showToast("Enter a name"); document.getElementById("cost-edit-name").focus(); return; }
+      payload = { action: type.editAction, id: row.id, name, amount, date: isoToDMY(dateVal) };
+    } else {
+      payload = {
+        action: type.editAction,
+        id: row.id,
+        date: isoToDMY(dateVal),
+        note: document.getElementById("cost-edit-note").value.trim(),
+        amount,
+      };
+      const qtyInput = document.getElementById("cost-edit-qty");
+      if (qtyInput) {
+        const qtyRaw = qtyInput.value;
+        payload.qty = qtyRaw === "" ? null : (parseFloat(qtyRaw) || null);
+      }
+    }
+
+    const saveBtn = document.getElementById("cost-edit-save");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        showToast("Saved");
+        costEditIdx = null;
+        dashLoaded = false; // net balance / totals just changed
+        await loadCosts(true);
+      } else {
+        showToast("Couldn't save — check your connection");
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    } catch (err) {
+      showToast("Couldn't save — check your connection");
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+
+  async function loadCosts(force) {
+    if (costsRaw && !force) { renderCostList(); return; }
+    if (!BACKEND_URL) { renderCostList(); return; }
+    document.getElementById("cost-list").innerHTML = `<div class="empty-note">Loading&hellip;</div>`;
+    const data = await fetchSummary();
+    if (!data) {
+      document.getElementById("cost-list").innerHTML = `<div class="empty-note">Couldn't load &mdash; check your connection.</div>`;
+      return;
+    }
+    costsRaw = data;
+    renderCostList();
+  }
+
+  async function addCost() {
+    if (!BACKEND_URL) { showToast("No backend connected yet"); return; }
+    const type = COST_TYPES[costType];
+    const amount = parseFloat(document.getElementById("cost-amount-input").value) || 0;
+    if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-amount-input").focus(); return; }
+
+    const payload = { action: type.addAction, amount };
+    if (costType === "expense") {
+      const name = document.getElementById("cost-name-input").value.trim();
+      if (!name) { showToast("Enter a name"); document.getElementById("cost-name-input").focus(); return; }
+      payload.name = name;
+      const expenseDateVal = document.getElementById("cost-expense-date-input").value || todayISO();
+      payload.date = isoToDMY(expenseDateVal);
+    } else {
+      const dateVal = document.getElementById("cost-date-input").value || todayISO();
+      payload.date = isoToDMY(dateVal);
+      payload.note = document.getElementById("cost-note-input").value.trim();
+      if (costType === "restocking") {
+        const qtyRaw = document.getElementById("cost-qty-input").value;
+        payload.qty = qtyRaw === "" ? null : (parseFloat(qtyRaw) || null);
+      }
+    }
+
+    const btn = document.getElementById("cost-add-btn");
+    btn.disabled = true;
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        showToast("Added");
+        document.getElementById("cost-amount-input").value = "";
+        document.getElementById("cost-note-input").value = "";
+        document.getElementById("cost-name-input").value = "";
+        document.getElementById("cost-qty-input").value = "";
+        document.querySelectorAll("#expense-chips .item-chip, #restock-item-chips .item-chip").forEach((c) => c.classList.remove("on"));
+        dashLoaded = false; // net balance / products just changed — refresh next time Dashboard opens
+        await loadCosts(true);
+      } else {
+        showToast("Couldn't add — check your connection");
+      }
+    } catch (err) {
+      showToast("Couldn't add — check your connection");
+    }
+    btn.disabled = false;
+  }
+
+  async function deleteCost(idx) {
+    if (!costsRaw) return;
+    const type = COST_TYPES[costType];
+    const rows = costsRaw[type.listKey] || [];
+    const row = rows[idx];
+    if (!row || !row.id) return;
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: type.deleteAction, id: row.id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        showToast("Deleted");
+        dashLoaded = false;
+        await loadCosts(true);
+      } else {
+        showToast("Couldn't delete — try again");
+      }
+    } catch (err) {
+      showToast("Couldn't delete — try again");
+    }
+  }
+
+  document.querySelectorAll("#cost-type-chips .item-chip").forEach((chip) => {
+    chip.addEventListener("click", () => { costType = chip.dataset.type; costActionIdx = null; costEditIdx = null; costDateOverrides.clear(); renderCostFields(); });
+  });
+  document.getElementById("cost-add-btn").addEventListener("click", addCost);
+  document.getElementById("cost-date-input").value = todayISO();
+  document.getElementById("cost-expense-date-input").value = todayISO();
+  renderExpenseChips();
+  renderRestockChips();
+  renderCostFields();
+
+  function switchTab(which) {
+    document.getElementById("view-entry").style.display = which === "entry" ? "" : "none";
+    document.getElementById("view-dashboard").style.display = which === "dashboard" ? "" : "none";
+    document.getElementById("view-costs").style.display = which === "costs" ? "" : "none";
+    document.getElementById("tab-entry").classList.toggle("on", which === "entry");
+    document.getElementById("tab-dashboard").classList.toggle("on", which === "dashboard");
+    document.getElementById("tab-costs").classList.toggle("on", which === "costs");
+    document.body.classList.toggle("theme-light", which === "entry");
+    document.body.classList.toggle("theme-dashgreen", which === "dashboard");
+    document.body.classList.toggle("theme-costs", which === "costs");
+    if (which === "dashboard") loadDashboard(false);
+    if (which === "costs") loadCosts(false);
+    else { costActionIdx = null; costEditIdx = null; costDateOverrides.clear(); }
+    if (which !== "entry" && (entryActionIdx !== null || entryEditIdx !== null)) {
+      entryActionIdx = null; entryEditIdx = null; render();
+    }
+  }
+
+  document.getElementById("tab-entry").addEventListener("click", () => switchTab("entry"));
+  document.getElementById("tab-dashboard").addEventListener("click", () => switchTab("dashboard"));
+  document.getElementById("tab-costs").addEventListener("click", () => switchTab("costs"));
+  document.getElementById("dash-refresh-btn").addEventListener("click", () => loadDashboard(true));
+  document.getElementById("print-dashboard-btn").addEventListener("click", printPage);
+
+  document.getElementById("date-input").value = businessDayISO();
+  document.getElementById("date-input").addEventListener("change", () => { entryActionIdx = null; entryEditIdx = null; render(); });
+  document.getElementById("add-btn").addEventListener("click", addEntry);
+  document.getElementById("export-btn").addEventListener("click", exportCSV);
+  document.getElementById("copy-btn").addEventListener("click", copySummary);
+  document.getElementById("clear-btn").addEventListener("click", clearAll);
+  document.getElementById("print-entry-btn").addEventListener("click", printPage);
+  document.getElementById("sync-all-btn").addEventListener("click", syncAll);
+  document.getElementById("cost-input").addEventListener("keydown", (e) => { if (e.key === "Enter") addEntry(); });
+  document.getElementById("sell-input").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("cost-input").focus(); });
+
+  document.getElementById("history-slider").addEventListener("input", () => {
+    // Live label update while dragging; the actual fetch waits for "change"
+    // (drag release) so scrubbing doesn't fire a request per pixel of travel.
+    const idx = Number(document.getElementById("history-slider").value);
+    document.getElementById("history-date").textContent = historyDates[idx] || "—";
+    updateHistoryNav();
+  });
+  document.getElementById("history-slider").addEventListener("change", () => {
+    showHistoryDay(Number(document.getElementById("history-slider").value));
+  });
+  document.getElementById("history-prev").addEventListener("click", () => {
+    const slider = document.getElementById("history-slider");
+    slider.value = Math.max(0, Number(slider.value) - 1);
+    showHistoryDay(Number(slider.value));
+  });
+  document.getElementById("history-next").addEventListener("click", () => {
+    const slider = document.getElementById("history-slider");
+    slider.value = Math.min(historyDates.length - 1, Number(slider.value) + 1);
+    showHistoryDay(Number(slider.value));
+  });
+
+  renderChips();
+  render();
+  loadRecentEntries();
+  loadHistoryDates();
+
+  /* ===================================================================
+     PWA: service worker + "Install this app" banner
+     - Registers the app-shell service worker so the page still opens
+       (from cache) with no signal at all.
+     - Android/desktop Chrome fires "beforeinstallprompt"; we hold onto
+       that event and show our own banner instead of waiting on Chrome's
+       own timing, then trigger the native prompt from our button.
+     - iOS Safari never fires that event — there's no programmatic install
+       there — so iOS gets a banner with the manual Share > Add to Home
+       Screen steps instead of an "Install" button.
+     - Dismissing (either path) is remembered in localStorage so it only
+       asks again after a week, not on every visit.
+     =================================================================== */
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    });
+  }
+
+  (function setupInstallBanner() {
+    const DISMISS_KEY = "bagshop_install_dismissed_at";
+    const DISMISS_DAYS = 7;
+
+    function recentlyDismissed() {
+      const at = Number(localStorage.getItem(DISMISS_KEY) || 0);
+      return at && Date.now() - at < DISMISS_DAYS * 24 * 60 * 60 * 1000;
+    }
+    function dismiss() {
+      try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (err) {}
+      banner.classList.remove("show");
+    }
+
+    const banner = document.getElementById("install-banner");
+    const text = document.getElementById("install-banner-text");
+    const goBtn = document.getElementById("install-go");
+    const dismissBtn = document.getElementById("install-dismiss");
+    dismissBtn.addEventListener("click", dismiss);
+
+    // Already running as an installed app (standalone) — nothing to offer.
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    if (isStandalone || recentlyDismissed()) return;
+
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    if (isIOS) {
+      // No install API on iOS — just the manual steps, and hide the
+      // "Install" button since there's nothing to trigger programmatically.
+      text.innerHTML = '<strong>Install this app</strong> — tap the Share icon, then "Add to Home Screen".';
+      goBtn.style.display = "none";
+      banner.classList.add("show");
+      return;
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      banner.classList.add("show");
+    });
+    goBtn.addEventListener("click", async () => {
+      if (!deferredPrompt) { dismiss(); return; }
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice.catch(() => {});
+      deferredPrompt = null;
+      banner.classList.remove("show");
+    });
+    window.addEventListener("appinstalled", dismiss);
+  })();
+</script>
+</body>
+</html>
