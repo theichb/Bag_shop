@@ -1417,11 +1417,16 @@
     const units = days.reduce((a, d) => a + d.units, 0);
     const restock = restocking.reduce((a, r) => a + (Number(r.amount) || 0), 0);
     const repairsTotal = repairs.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    // Dateless legacy expense rows count in every month (see the comment on
-    // buildDashboardModel's expenses field); dated ones only count in their
-    // own month, so Net Balance for, say, July doesn't include a bill that
-    // was actually logged in August.
-    const expenses = model.expenses.filter((r) => !r.parsed || inMonth(r.parsed)).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    // Only expenses with a real, parseable date count toward a given month's
+    // Net Balance — a dateless row (the handful of original bills imported
+    // before the Date column existed) is NOT counted in any month here.
+    // Earlier this counted them in every month, which meant that one-time
+    // import kept subtracting itself from Net Balance forever, making it
+    // look like last month's bills never went away. They still show up in
+    // the Costs tab's Expense list (see rowInMonth there) so nothing is
+    // lost — edit one there and give it a real date to have it count
+    // toward the month it actually belongs to.
+    const expenses = model.expenses.filter((r) => r.parsed && inMonth(r.parsed)).reduce((a, r) => a + (Number(r.amount) || 0), 0);
     const totals = {
       sales, profit, units, restock, repairs: repairsTotal, expenses,
       net: sales - restock - repairsTotal - expenses,
@@ -1843,7 +1848,13 @@
     wireCostListEvents(listEl);
     setupCostMonthSwitcher();
 
-    const total = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    // Same rule as the Dashboard's Net Balance: a dateless row (the original
+    // imported bills, before the Date column existed) still shows in this
+    // list every month for visibility/editing, but its amount only counts
+    // toward the Total once — never — until it's given a real date. Without
+    // this, that one-time import would silently add itself to every single
+    // month's total forever.
+    const total = rows.reduce((a, r) => (monthDesc && !parseFlexDate(r.date) ? a : a + (Number(r.amount) || 0)), 0);
     totalEl.innerHTML = `<div class="subtotal"><span>Total</span><span class="mono">THB ${baht(total)}</span></div>`;
   }
 
