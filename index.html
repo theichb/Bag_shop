@@ -1384,15 +1384,23 @@
 
     const restocking = (raw.restocking || []).map((r) => ({ ...r, parsed: parseFlexDate(r.date) }));
     const repairs = (raw.repairs || []).map((r) => ({ ...r, parsed: parseFlexDate(r.date) }));
-    // Expenses (Rent, Police, ...) has no date column in the Sheet at all —
-    // it's a flat recurring-bills total, the same regardless of which month
-    // is selected (matching how the Sheet's own Summary tab treats it).
-    const expensesTotal = (raw.expenses || []).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    // Expenses (Rent, Police, ...) now carry a real Date column (added after
+    // this comment was first written, back when they didn't), so they get
+    // filtered to the selected month same as restocking/repairs — see
+    // computeMonthView. A handful of original rows were imported before that
+    // column existed and have no date; those are treated as always-current
+    // (shown in every month) rather than vanishing from Net Balance entirely
+    // — same rule the Costs tab's month slider uses for the same rows.
+    const expenses = (raw.expenses || []).map((r) => ({ ...r, parsed: parseFlexDate(r.date) }));
 
-    const allDates = days.map((d) => d.parsed).concat(restocking.map((r) => r.parsed)).concat(repairs.map((r) => r.parsed)).filter(Boolean);
+    const allDates = days.map((d) => d.parsed)
+      .concat(restocking.map((r) => r.parsed))
+      .concat(repairs.map((r) => r.parsed))
+      .concat(expenses.map((r) => r.parsed))
+      .filter(Boolean);
     const months = buildMonthsList(allDates);
 
-    return { days, restocking, repairs, expensesTotal, months, hasAnyData: days.length > 0 || restocking.length > 0 || repairs.length > 0 };
+    return { days, restocking, repairs, expenses, months, hasAnyData: days.length > 0 || restocking.length > 0 || repairs.length > 0 || expenses.length > 0 };
   }
 
   // Slices the full model down to one month and computes that month's
@@ -1409,7 +1417,11 @@
     const units = days.reduce((a, d) => a + d.units, 0);
     const restock = restocking.reduce((a, r) => a + (Number(r.amount) || 0), 0);
     const repairsTotal = repairs.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    const expenses = model.expensesTotal;
+    // Dateless legacy expense rows count in every month (see the comment on
+    // buildDashboardModel's expenses field); dated ones only count in their
+    // own month, so Net Balance for, say, July doesn't include a bill that
+    // was actually logged in August.
+    const expenses = model.expenses.filter((r) => !r.parsed || inMonth(r.parsed)).reduce((a, r) => a + (Number(r.amount) || 0), 0);
     const totals = {
       sales, profit, units, restock, repairs: repairsTotal, expenses,
       net: sales - restock - repairsTotal - expenses,
