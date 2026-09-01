@@ -1709,6 +1709,14 @@
   let costsRaw = null; // last-fetched {entries, restocking, repairs, expenses} or null
   let costActionIdx = null; // idx of the row currently showing the Edit/Delete choice
   let costEditIdx = null; // idx of the row currently open as an inline edit form
+  // Month slider — shared across all three cost types (switching Restocking
+  // / Repairs & Usage / Expense keeps whichever month you're looking at).
+  // Built from every dated row across all three tabs, same idea as the
+  // Dashboard's buildMonthsList: every month from the earliest cost on
+  // record through the current real month gets a slot, so there's always a
+  // "this month" stop to land on by default.
+  let costMonths = [];
+  let costMonthIndex = null; // null until the first load computes it (lands on the current month)
   // Restocking only: per-date expand/collapse overrides. A date not present
   // here uses its default (most recent date open, every other date closed);
   // toggling a date records an explicit override here instead.
@@ -1752,6 +1760,38 @@
     renderCostList();
   }
 
+  // Builds the month-slider markup (identical pattern to the Dashboard's
+  // switcher — same classes, so it reuses that CSS with nothing new needed).
+  // Returns "" if there's no month to show yet (data hasn't loaded).
+  function renderCostMonthSwitcher() {
+    if (!costMonths.length || costMonthIndex === null) return "";
+    const monthDesc = costMonths[costMonthIndex];
+    return `
+      <div class="history-head" style="margin-top:2px">
+        <span class="history-date mono" id="cost-month-label">${esc(monthDesc.label)}</span>
+        <span class="history-nav no-print">
+          <button type="button" class="history-step" id="cost-month-prev" aria-label="Previous month" ${costMonthIndex <= 0 ? "disabled" : ""}>&lsaquo;</button>
+          <button type="button" class="history-step" id="cost-month-next" aria-label="Next month" ${costMonthIndex >= costMonths.length - 1 ? "disabled" : ""}>&rsaquo;</button>
+        </span>
+      </div>
+      <input type="range" id="cost-month-slider" class="no-print" min="0" max="${costMonths.length - 1}" value="${costMonthIndex}" step="1" />
+    `;
+  }
+
+  // A row counts as "in" the selected month if its date falls in that
+  // calendar month, OR it has no parseable date at all — a few original
+  // Expenses rows (Rent, Police, ...) were imported as a flat recurring
+  // total with no date column, so rather than hiding them from every month
+  // (which would make them vanish from the Costs tab entirely) they're
+  // treated as always-current, same as how the Dashboard's Total Monthly
+  // Expenses figure ignores the month slider. Every row added through this
+  // form from now on always gets a real date, so this only affects that
+  // original handful.
+  function rowInMonth(r, monthDesc) {
+    const parsed = parseFlexDate(r.date);
+    return !parsed || monthKeyOf(parsed) === monthDesc.key;
+  }
+
   function renderCostList() {
     const type = COST_TYPES[costType];
     document.getElementById("cost-list-heading").textContent = type.heading;
@@ -1769,23 +1809,56 @@
       return;
     }
 
-    const rows = costsRaw[type.listKey] || [];
+    const switcherHtml = renderCostMonthSwitcher();
+    const monthDesc = (costMonths.length && costMonthIndex !== null) ? costMonths[costMonthIndex] : null;
+
+    const allRows = (costsRaw[type.listKey] || []).map((r, idx) => ({ ...r, idx })); // idx = position in the untouched full array, so edit/delete lookups stay correct after filtering
+    const rows = monthDesc ? allRows.filter((r) => rowInMonth(r, monthDesc)) : allRows;
+
     if (rows.length === 0) {
-      listEl.innerHTML = `<div class="empty-note">Nothing logged here yet.</div>`;
+      listEl.innerHTML = switcherHtml + `<div class="empty-note">Nothing logged here${monthDesc ? " this month" : " yet"}.</div>`;
       totalEl.innerHTML = "";
+      setupCostMonthSwitcher();
       return;
     }
 
-    const ordered = rows.map((r, idx) => ({ ...r, idx })).reverse(); // newest first
+    const ordered = rows.slice().reverse(); // newest first
 
-    listEl.innerHTML = costType === "restocking"
+    listEl.innerHTML = switcherHtml + (costType === "restocking"
       ? renderRestockingList(ordered, type)
-      : ordered.map((r) => renderCostRow(r, type)).join("");
+      : ordered.map((r) => renderCostRow(r, type)).join(""));
 
     wireCostListEvents(listEl);
+    setupCostMonthSwitcher();
 
     const total = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
     totalEl.innerHTML = `<div class="subtotal"><span>Total</span><span class="mono">THB ${baht(total)}</span></div>`;
+  }
+
+  // Moving to a different month makes any per-date open/closed overrides
+  // (restocking) and the edit/delete choice popovers meaningless — reset
+  // them, same reasoning as the Dashboard's goToMonth resetting dashOpenDay.
+  function goToCostMonth(idx) {
+    const clamped = Math.max(0, Math.min(costMonths.length - 1, idx));
+    if (clamped === costMonthIndex) return;
+    costMonthIndex = clamped;
+    costDateOverrides.clear();
+    costActionIdx = null;
+    costEditIdx = null;
+    renderCostList();
+  }
+
+  function setupCostMonthSwitcher() {
+    const slider = document.getElementById("cost-month-slider");
+    if (!slider) return;
+    const prev = document.getElementById("cost-month-prev");
+    const next = document.getElementById("cost-month-next");
+    slider.addEventListener("input", () => {
+      document.getElementById("cost-month-label").textContent = costMonths[Number(slider.value)].label;
+    });
+    slider.addEventListener("change", () => goToCostMonth(Number(slider.value)));
+    prev.addEventListener("click", () => goToCostMonth(costMonthIndex - 1));
+    next.addEventListener("click", () => goToCostMonth(costMonthIndex + 1));
   }
 
   // Renders one entry as either its normal .cost-row (with Edit/Delete
@@ -2009,6 +2082,19 @@
     }
   }
 
+  // Same union-of-dates approach as buildDashboardModel's months list, just
+  // scoped to whichever rows the Costs tab actually shows (restocking,
+  // repairs, expenses — not sales). Shared across all three cost types so
+  // switching type mid-browse keeps whichever month you're on.
+  function buildCostMonths(raw) {
+    const dates = []
+      .concat((raw.restocking || []).map((r) => parseFlexDate(r.date)))
+      .concat((raw.repairs || []).map((r) => parseFlexDate(r.date)))
+      .concat((raw.expenses || []).map((r) => parseFlexDate(r.date)))
+      .filter(Boolean);
+    return buildMonthsList(dates);
+  }
+
   async function loadCosts(force) {
     if (costsRaw && !force) { renderCostList(); return; }
     if (!BACKEND_URL) { renderCostList(); return; }
@@ -2019,6 +2105,12 @@
       return;
     }
     costsRaw = data;
+    costMonths = buildCostMonths(data);
+    // Only snap to "current month" the first time — a refresh after adding/
+    // deleting a row (force=true) should keep whichever month you're looking
+    // at, just re-clamped in case the months list changed shape.
+    if (costMonthIndex === null) costMonthIndex = costMonths.length - 1;
+    costMonthIndex = Math.max(0, Math.min(costMonthIndex, costMonths.length - 1));
     renderCostList();
   }
 
