@@ -159,6 +159,29 @@
   }
   .item-chip:active, .item-chip.on { border-color: var(--brass); color: var(--brass); }
 
+  /* ---- quick-pick manage mode ----
+     Each "Quick pick" row (Log Sales items, Restocking items, Expense
+     names) can be switched from tap-to-fill chips into an editable list —
+     rename in place, delete with the ×, add new at the bottom. */
+  .qp-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .qp-manage-toggle {
+    background: none; border: none; color: var(--brass); font-family: 'Karla', sans-serif;
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; padding: 2px 0;
+  }
+  .qp-manage-toggle:active { opacity: .7; }
+  .chip-row.qp-manage { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .qp-row { display: flex; gap: 8px; align-items: center; }
+  .qp-row .qp-input {
+    flex: 1; min-width: 0; background: var(--ink); border: 1px solid var(--edge); color: var(--bone);
+    padding: 10px 12px; border-radius: 3px; font-family: 'Karla', sans-serif; font-size: 14px;
+  }
+  .qp-row .qp-input:focus { outline: 1px solid var(--brass); border-color: var(--brass); }
+  .qp-del, .qp-add {
+    background: none; border: 1px solid var(--edge); color: var(--oxblood);
+    width: 36px; height: 36px; border-radius: 3px; font-size: 16px; cursor: pointer; line-height: 1; flex-shrink: 0;
+  }
+  .qp-add { color: var(--verdigris); font-size: 18px; }
+
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
     font-family: 'Karla', sans-serif; font-size: 14px; font-weight: 600;
@@ -428,7 +451,10 @@
       <input type="date" id="date-input" />
     </div>
 
-    <div class="label" style="margin-bottom:8px">Quick pick</div>
+    <div class="qp-label-row">
+      <span class="label">Quick pick</span>
+      <button type="button" class="qp-manage-toggle" id="item-chips-manage-btn">Manage</button>
+    </div>
     <div class="chip-row" id="item-chips"></div>
 
     <div class="field">
@@ -535,7 +561,10 @@
 
       <div id="cost-fields-note" class="cost-fields">
         <div id="restock-quickpick" style="display:none">
-          <div class="label" style="margin-bottom:8px">Quick pick</div>
+          <div class="qp-label-row">
+            <span class="label">Quick pick</span>
+            <button type="button" class="qp-manage-toggle" id="restock-item-chips-manage-btn">Manage</button>
+          </div>
           <div class="chip-row" id="restock-item-chips"></div>
         </div>
         <div class="field">
@@ -553,7 +582,10 @@
       </div>
 
       <div id="cost-fields-expense" class="cost-fields" style="display:none">
-        <div class="label" style="margin-bottom:8px">Quick pick</div>
+        <div class="qp-label-row">
+          <span class="label">Quick pick</span>
+          <button type="button" class="qp-manage-toggle" id="expense-chips-manage-btn">Manage</button>
+        </div>
         <div class="chip-row" id="expense-chips"></div>
         <div class="field">
           <label for="cost-expense-date-input">Date</label>
@@ -617,8 +649,100 @@
   const withKey = (obj) => Object.assign({ key: BACKEND_KEY, token: getToken() }, obj);
   const keyedUrl = (qs) => BACKEND_URL + "?key=" + encodeURIComponent(BACKEND_KEY) + "&token=" + encodeURIComponent(getToken()) + (qs ? "&" + qs : "");
 
-  const PRODUCTS = ["Bag", "Cross Bag", "Side Bag", "Back Pack", "Laptop Bag", "Box Bag", "Hand Held",
-    "Wallet", "Long Wallet", "Crocodile Wallet", "Belt", "Cards", "Coin Pouch", "Money Clip", "Passport"];
+  // ---------------------------------------------------------------------
+  // Quick pick lists — Log Sales' item chips, Restocking's item chips (the
+  // same list — see PRODUCTS below), and Expense's name chips are all
+  // editable in place now (see the "Manage" toggle next to each "Quick
+  // pick" label, wired up near renderQuickPick below). There's nothing in
+  // the Sheet that owns this list — it only ever existed as a hardcoded
+  // array in this file — so edits are saved to this browser's storage
+  // instead: a per-device list, not synced anywhere. Falls back to the
+  // original defaults the first time (or if storage is unavailable/empty).
+  function loadQuickPickList(key, defaults) {
+    try {
+      const arr = JSON.parse(localStorage.getItem(key));
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (err) {}
+    return defaults.slice();
+  }
+  function saveQuickPickList(key, list) {
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch (err) {}
+  }
+
+  const PRODUCTS = loadQuickPickList("bagshop_products", ["Bag", "Cross Bag", "Side Bag", "Back Pack", "Laptop Bag", "Box Bag", "Hand Held",
+    "Wallet", "Long Wallet", "Crocodile Wallet", "Belt", "Cards", "Coin Pouch", "Money Clip", "Passport"]);
+
+  // Which quick-pick rows are currently in "Manage" (edit) mode — keyed by
+  // a short id per row, not by list, since Log Sales' item-chips and
+  // Restocking's restock-item-chips both show PRODUCTS but can be toggled
+  // independently (only one is ever visible at a time anyway, since they're
+  // on different tabs).
+  const quickPickManageState = { items: false, restock: false, expense: false };
+
+  // Renders one quick-pick row. In normal mode: tap-to-fill chips, same as
+  // always. In manage mode: each item becomes a text box you can rename in
+  // place (saved on blur/Enter) plus a × to remove it, with an "Add new…"
+  // box at the bottom. `list` is mutated in place (push/splice/index-set)
+  // and persisted to `storageKey` on every change; `refresh` re-renders
+  // every quick-pick row backed by this same list/state combo — needed
+  // because PRODUCTS feeds two different rows on two different tabs.
+  function renderQuickPick(containerId, list, storageKey, stateKey, onPick, refresh) {
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return;
+
+    if (!quickPickManageState[stateKey]) {
+      wrap.classList.remove("qp-manage");
+      wrap.innerHTML = list.map((p) => `<button type="button" class="item-chip">${esc(p)}</button>`).join("");
+      wrap.querySelectorAll(".item-chip").forEach((chip, i) => {
+        chip.addEventListener("click", () => onPick(wrap, chip, list[i]));
+      });
+      return;
+    }
+
+    wrap.classList.add("qp-manage");
+    wrap.innerHTML = list.map((p, i) => `
+      <div class="qp-row">
+        <input type="text" class="qp-input" data-qp-idx="${i}" value="${esc(p)}" autocomplete="off" />
+        <button type="button" class="qp-del" data-qp-del="${i}" aria-label="Remove ${esc(p)}">&times;</button>
+      </div>`).join("") + `
+      <div class="qp-row">
+        <input type="text" class="qp-input" id="${containerId}-new" placeholder="Add new&hellip;" autocomplete="off" />
+        <button type="button" class="qp-add" id="${containerId}-add-btn" aria-label="Add">+</button>
+      </div>`;
+
+    wrap.querySelectorAll(".qp-input[data-qp-idx]").forEach((input) => {
+      const commit = () => {
+        const idx = Number(input.dataset.qpIdx);
+        const val = input.value.trim();
+        if (!val) { input.value = list[idx]; return; } // blanking an existing item does nothing — use × to remove it
+        if (val === list[idx]) return;
+        list[idx] = val;
+        saveQuickPickList(storageKey, list);
+        refresh();
+      };
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+    });
+
+    wrap.querySelectorAll("[data-qp-del]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        list.splice(Number(btn.dataset.qpDel), 1);
+        saveQuickPickList(storageKey, list);
+        refresh();
+      });
+    });
+
+    const addInput = document.getElementById(`${containerId}-new`);
+    const commitAdd = () => {
+      const val = addInput.value.trim();
+      if (!val) return;
+      list.push(val);
+      saveQuickPickList(storageKey, list);
+      refresh();
+    };
+    document.getElementById(`${containerId}-add-btn`).addEventListener("click", commitAdd);
+    addInput.addEventListener("keydown", (e) => { if (e.key === "Enter") commitAdd(); });
+  }
 
   let entries = []; // { date, item, qty, sell, cost, syncState: 'off'|'pending'|'ok'|'fail' }
   let historyDates = []; // D/M/YYYY strings, ascending — every day that has at least one logged sale
@@ -751,18 +875,24 @@
     }
   }
 
-  function renderChips() {
-    const wrap = document.getElementById("item-chips");
-    wrap.innerHTML = PRODUCTS.map((p) => `<button type="button" class="item-chip" data-item="${esc(p)}">${esc(p)}</button>`).join("");
-    wrap.querySelectorAll(".item-chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        document.getElementById("item-input").value = chip.dataset.item;
-        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
-        chip.classList.add("on");
-        document.getElementById("qty-input").focus();
-        document.getElementById("qty-input").select();
-      });
-    });
+  // PRODUCTS feeds two quick-pick rows — this one (Log Sales) and
+  // restock-item-chips (Costs > Restocking) below — so any edit made
+  // through either one's Manage mode has to refresh both.
+  function refreshProductChips() {
+    renderQuickPick("item-chips", PRODUCTS, "bagshop_products", "items", (wrap, chip, val) => {
+      document.getElementById("item-input").value = val;
+      wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+      document.getElementById("qty-input").focus();
+      document.getElementById("qty-input").select();
+    }, refreshProductChips);
+    renderQuickPick("restock-item-chips", PRODUCTS, "bagshop_products", "restock", (wrap, chip, val) => {
+      document.getElementById("cost-note-input").value = val;
+      wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+      const qtyField = document.getElementById("cost-qty-field");
+      (qtyField.style.display !== "none" ? document.getElementById("cost-qty-input") : document.getElementById("cost-amount-input")).focus();
+    }, refreshProductChips);
   }
 
   function currentDate() {
@@ -1720,7 +1850,7 @@
     repair: { listKey: "repairs", addAction: "addRepair", deleteAction: "deleteRepair", editAction: "editRepair", heading: "Repairs & Usage entries" },
     expense: { listKey: "expenses", addAction: "addExpense", deleteAction: "deleteExpense", editAction: "editExpense", heading: "Expenses" },
   };
-  const EXPENSE_NAMES = ["Rent", "Police", "Stock", "Light", "Labor"];
+  const EXPENSE_NAMES = loadQuickPickList("bagshop_expense_names", ["Rent", "Police", "Stock", "Light", "Labor"]);
 
   let costType = "restocking";
   let costsRaw = null; // last-fetched {entries, restocking, repairs, expenses} or null
@@ -1739,33 +1869,13 @@
   // toggling a date records an explicit override here instead.
   let costDateOverrides = new Map(); // dateStr -> true/false
 
-  function renderExpenseChips() {
-    const wrap = document.getElementById("expense-chips");
-    wrap.innerHTML = EXPENSE_NAMES.map((n) => `<button type="button" class="item-chip" data-expense="${esc(n)}">${esc(n)}</button>`).join("");
-    wrap.querySelectorAll(".item-chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        document.getElementById("cost-name-input").value = chip.dataset.expense;
-        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
-        chip.classList.add("on");
-        document.getElementById("cost-amount-input").focus();
-      });
-    });
-  }
-
-  // Same PRODUCTS list and same tap-to-fill interaction as the Log Sales
-  // tab's item chips — tapping one just fills the Note field with that name.
-  function renderRestockChips() {
-    const wrap = document.getElementById("restock-item-chips");
-    wrap.innerHTML = PRODUCTS.map((p) => `<button type="button" class="item-chip" data-restock-item="${esc(p)}">${esc(p)}</button>`).join("");
-    wrap.querySelectorAll(".item-chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        document.getElementById("cost-note-input").value = chip.dataset.restockItem;
-        wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
-        chip.classList.add("on");
-        const qtyField = document.getElementById("cost-qty-field");
-        (qtyField.style.display !== "none" ? document.getElementById("cost-qty-input") : document.getElementById("cost-amount-input")).focus();
-      });
-    });
+  function refreshExpenseChips() {
+    renderQuickPick("expense-chips", EXPENSE_NAMES, "bagshop_expense_names", "expense", (wrap, chip, val) => {
+      document.getElementById("cost-name-input").value = val;
+      wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+      document.getElementById("cost-amount-input").focus();
+    }, refreshExpenseChips);
   }
 
   function renderCostFields() {
@@ -2218,8 +2328,7 @@
   document.getElementById("cost-add-btn").addEventListener("click", addCost);
   document.getElementById("cost-date-input").value = todayISO();
   document.getElementById("cost-expense-date-input").value = todayISO();
-  renderExpenseChips();
-  renderRestockChips();
+  refreshExpenseChips();
   renderCostFields();
 
   function switchTab(which) {
@@ -2282,7 +2391,23 @@
   document.getElementById("pin-input").addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });
   if (!getToken()) showLockScreen();
 
-  renderChips();
+  // Quick-pick "Manage" toggles — item-chips and restock-item-chips both
+  // back onto PRODUCTS (refreshProductChips renders both), so toggling
+  // either one's manage state only affects that row's own display; the
+  // other stays in whatever mode it was in.
+  function wireQuickPickToggle(btnId, stateKey, refresh) {
+    const btn = document.getElementById(btnId);
+    btn.addEventListener("click", () => {
+      quickPickManageState[stateKey] = !quickPickManageState[stateKey];
+      btn.textContent = quickPickManageState[stateKey] ? "Done" : "Manage";
+      refresh();
+    });
+  }
+  wireQuickPickToggle("item-chips-manage-btn", "items", refreshProductChips);
+  wireQuickPickToggle("restock-item-chips-manage-btn", "restock", refreshProductChips);
+  wireQuickPickToggle("expense-chips-manage-btn", "expense", refreshExpenseChips);
+
+  refreshProductChips();
   render();
   loadRecentEntries();
   loadHistoryDates();
