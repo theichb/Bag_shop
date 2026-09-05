@@ -571,9 +571,17 @@
           <label for="cost-date-input">Date</label>
           <input type="date" id="cost-date-input" />
         </div>
+        <div class="field" id="cost-price-field" style="display:none">
+          <label for="cost-price-input">Price per unit</label>
+          <input type="number" id="cost-price-input" inputmode="decimal" min="0" step="1" placeholder="e.g. 130" />
+        </div>
         <div class="field" id="cost-qty-field" style="display:none">
-          <label for="cost-qty-input">Quantity (optional)</label>
+          <label for="cost-qty-input">Quantity</label>
           <input type="number" id="cost-qty-input" inputmode="numeric" min="1" step="1" placeholder="e.g. 20" />
+        </div>
+        <div class="field" id="cost-restock-total-field" style="display:none">
+          <label>Total</label>
+          <div id="cost-restock-total-display" class="mono" style="padding:10px 0; font-size:16px; color:var(--brass)">THB 0</div>
         </div>
         <div class="field">
           <label for="cost-note-input">Note (optional)</label>
@@ -597,7 +605,7 @@
         </div>
       </div>
 
-      <div class="field">
+      <div class="field" id="cost-amount-field">
         <label for="cost-amount-input">Amount</label>
         <input type="number" id="cost-amount-input" inputmode="decimal" min="0" step="1" placeholder="0" />
       </div>
@@ -752,6 +760,10 @@
 
   const baht = (n) => (n < 0 ? "-" : "") + Math.abs(Math.round(n || 0)).toLocaleString("en-US");
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // Rounds to 2 decimals — used to pre-fill "Price per unit" when editing an
+  // existing restocking row (derived as amount / qty, which won't always be
+  // a whole number).
+  const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
   function todayISO() {
     const d = new Date();
@@ -891,7 +903,7 @@
       wrap.querySelectorAll(".item-chip").forEach((c) => c.classList.remove("on"));
       chip.classList.add("on");
       const qtyField = document.getElementById("cost-qty-field");
-      (qtyField.style.display !== "none" ? document.getElementById("cost-qty-input") : document.getElementById("cost-amount-input")).focus();
+      (qtyField.style.display !== "none" ? document.getElementById("cost-price-input") : document.getElementById("cost-amount-input")).focus();
     }, refreshProductChips);
   }
 
@@ -1882,9 +1894,25 @@
     document.querySelectorAll("#cost-type-chips .item-chip").forEach((c) => c.classList.toggle("on", c.dataset.type === costType));
     document.getElementById("cost-fields-note").style.display = costType === "expense" ? "none" : "";
     document.getElementById("cost-fields-expense").style.display = costType === "expense" ? "" : "none";
-    document.getElementById("cost-qty-field").style.display = costType === "restocking" ? "" : "none";
-    document.getElementById("restock-quickpick").style.display = costType === "restocking" ? "" : "none";
+    const isRestocking = costType === "restocking";
+    document.getElementById("cost-qty-field").style.display = isRestocking ? "" : "none";
+    document.getElementById("cost-price-field").style.display = isRestocking ? "" : "none";
+    document.getElementById("cost-restock-total-field").style.display = isRestocking ? "" : "none";
+    document.getElementById("cost-amount-field").style.display = isRestocking ? "none" : "";
+    document.getElementById("restock-quickpick").style.display = isRestocking ? "" : "none";
+    if (isRestocking) updateRestockTotal();
     renderCostList();
+  }
+
+  // Restocking's Amount is derived from Price per unit × Quantity rather
+  // than typed in directly. Keeps #cost-amount-input in sync (it's still
+  // what actually gets submitted) and refreshes the live "Total" readout.
+  function updateRestockTotal() {
+    const price = parseFloat(document.getElementById("cost-price-input").value) || 0;
+    const qty = parseFloat(document.getElementById("cost-qty-input").value) || 0;
+    const total = price * qty;
+    document.getElementById("cost-amount-input").value = total > 0 ? total : "";
+    document.getElementById("cost-restock-total-display").textContent = "THB " + baht(total);
   }
 
   // Builds the month-slider markup (identical pattern to the Dashboard's
@@ -2097,6 +2125,21 @@
     if (cancelBtn) cancelBtn.addEventListener("click", () => { costEditIdx = null; renderCostList(); });
     const saveBtn = listEl.querySelector("#cost-edit-save");
     if (saveBtn) saveBtn.addEventListener("click", () => saveCostEdit(Number(saveBtn.dataset.costSave)));
+    // Restocking's edit form: Price per unit × Quantity drives a live Total
+    // readout, same pattern as the add form's #cost-restock-total-display.
+    const editPrice = listEl.querySelector("#cost-edit-price");
+    const editQty = listEl.querySelector("#cost-edit-qty");
+    if (editPrice && editQty) {
+      const updateEditTotal = () => {
+        const price = parseFloat(editPrice.value) || 0;
+        const qty = parseFloat(editQty.value) || 0;
+        const total = price * qty;
+        const totalDisplay = listEl.querySelector("#cost-edit-total-display");
+        if (totalDisplay) totalDisplay.textContent = "THB " + baht(total);
+      };
+      editPrice.addEventListener("input", updateEditTotal);
+      editQty.addEventListener("input", updateEditTotal);
+    }
     listEl.querySelectorAll("[data-cost-date-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const d = btn.dataset.costDateToggle;
@@ -2143,14 +2186,22 @@
         </div>
         ${costType === "restocking" ? `
         <div class="field">
-          <label for="cost-edit-qty">Quantity (optional)</label>
-          <input type="number" id="cost-edit-qty" inputmode="numeric" min="1" step="1" value="${r.qty != null ? r.qty : ""}" />
+          <label for="cost-edit-price">Price per unit</label>
+          <input type="number" id="cost-edit-price" inputmode="decimal" min="0" step="1" value="${r.qty ? round2(r.amount / r.qty) : r.amount}" />
+        </div>
+        <div class="field">
+          <label for="cost-edit-qty">Quantity</label>
+          <input type="number" id="cost-edit-qty" inputmode="numeric" min="1" step="1" value="${r.qty != null ? r.qty : 1}" />
+        </div>
+        <div class="field">
+          <label>Total</label>
+          <div id="cost-edit-total-display" class="mono" style="padding:10px 0; font-size:16px; color:var(--brass)">THB ${baht(r.amount)}</div>
         </div>` : ""}
         <div class="field">
           <label for="cost-edit-note">Note (optional)</label>
           <input type="text" id="cost-edit-note" value="${esc(r.note || "")}" autocomplete="off" />
         </div>
-        <div class="field">
+        <div class="field" id="cost-edit-amount-field" ${costType === "restocking" ? 'style="display:none"' : ""}>
           <label for="cost-edit-amount">Amount</label>
           <input type="number" id="cost-edit-amount" inputmode="decimal" min="0" step="1" value="${r.amount}" />
         </div>
@@ -2167,8 +2218,17 @@
     const row = rows[idx];
     if (!row || !row.id || !type.editAction) return;
 
-    const amount = parseFloat(document.getElementById("cost-edit-amount").value) || 0;
-    if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-edit-amount").focus(); return; }
+    let amount;
+    if (costType === "restocking") {
+      const price = parseFloat(document.getElementById("cost-edit-price").value) || 0;
+      const qty = parseFloat(document.getElementById("cost-edit-qty").value) || 0;
+      if (price <= 0) { showToast("Enter a price per unit"); document.getElementById("cost-edit-price").focus(); return; }
+      if (qty <= 0) { showToast("Enter a quantity"); document.getElementById("cost-edit-qty").focus(); return; }
+      amount = price * qty;
+    } else {
+      amount = parseFloat(document.getElementById("cost-edit-amount").value) || 0;
+      if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-edit-amount").focus(); return; }
+    }
     const dateVal = document.getElementById("cost-edit-date").value || todayISO();
 
     let payload;
@@ -2250,8 +2310,18 @@
   async function addCost() {
     if (!BACKEND_URL) { showToast("No backend connected yet"); return; }
     const type = COST_TYPES[costType];
-    const amount = parseFloat(document.getElementById("cost-amount-input").value) || 0;
-    if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-amount-input").focus(); return; }
+
+    let amount;
+    if (costType === "restocking") {
+      const price = parseFloat(document.getElementById("cost-price-input").value) || 0;
+      const qty = parseFloat(document.getElementById("cost-qty-input").value) || 0;
+      if (price <= 0) { showToast("Enter a price per unit"); document.getElementById("cost-price-input").focus(); return; }
+      if (qty <= 0) { showToast("Enter a quantity"); document.getElementById("cost-qty-input").focus(); return; }
+      amount = price * qty;
+    } else {
+      amount = parseFloat(document.getElementById("cost-amount-input").value) || 0;
+      if (amount <= 0) { showToast("Enter an amount"); document.getElementById("cost-amount-input").focus(); return; }
+    }
 
     const payload = { action: type.addAction, amount };
     if (costType === "expense") {
@@ -2285,6 +2355,8 @@
         document.getElementById("cost-note-input").value = "";
         document.getElementById("cost-name-input").value = "";
         document.getElementById("cost-qty-input").value = "";
+        document.getElementById("cost-price-input").value = "";
+        document.getElementById("cost-restock-total-display").textContent = "THB 0";
         document.querySelectorAll("#expense-chips .item-chip, #restock-item-chips .item-chip").forEach((c) => c.classList.remove("on"));
         dashLoaded = false; // net balance / products just changed — refresh next time Dashboard opens
         await loadCosts(true);
@@ -2326,6 +2398,8 @@
     chip.addEventListener("click", () => { costType = chip.dataset.type; costActionIdx = null; costEditIdx = null; costDateOverrides.clear(); renderCostFields(); });
   });
   document.getElementById("cost-add-btn").addEventListener("click", addCost);
+  document.getElementById("cost-price-input").addEventListener("input", updateRestockTotal);
+  document.getElementById("cost-qty-input").addEventListener("input", updateRestockTotal);
   document.getElementById("cost-date-input").value = todayISO();
   document.getElementById("cost-expense-date-input").value = todayISO();
   refreshExpenseChips();
